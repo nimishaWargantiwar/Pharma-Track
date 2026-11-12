@@ -1,0 +1,39 @@
+# Build & packaging outputs
+target/
+.mvn/wrapper/maven-wrapper.jar
+
+# Local secrets & database bootstrap scripts (NEVER package into container image)
+config/
+**/application-local.*
+*local.properties
+*local.yml
+*local.yaml
+.env
+.env.*
+!.env.example
+setup_database.sql
+setup_database.example.sql
+*.local.sql
+*.dump
+*.bak
+*.backup
+*.sql.gz
+*.sql.zip
+
+# Certificates, keys, keystores, logs & IDE metadata
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.iml
+

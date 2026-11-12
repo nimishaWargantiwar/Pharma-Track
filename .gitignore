@@ -1,0 +1,92 @@
+# Operating System Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Backend Build & Temp Output
+backend/target/
+target/
+backend/.flattened-pom.xml
+*.class
+hs_err_pid*.log
+
+# Frontend Build & Dependencies
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+node_modules/
+dist/
+.vite/
+coverage/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE & Editor Files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.sublime-project
+*.sublime-workspace
+.classpath
+.project
+.settings/
+*.swp
+*.swo
+*~
+
+# Deployment Platform State Directories
+.vercel/
+.render/
+
+# Environment Files (explicitly allow *.env.example templates)
+.env
+.env.*
+*.env
+!.env.example
+!**/.env.example
+!*.env.example
+
+# Local & Secret-Bearing Configuration Files
+application-local.*
+*local.properties
+*local.yml
+*local.yaml
+/backend/config/*.properties
+/backend/config/*.yml
+/backend/config/*.yaml
+/backend/src/main/resources/application-local.*
+!*.properties.example
+!*.yml.example
+!*.yaml.example
+
+# Private Keys, Certificates & Keystores
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+
+# Database Dumps, Backups & Credential-Bearing Local Setup Scripts
+*.dump
+*.bak
+*.backup
+*.sql.gz
+*.sql.zip
+setup_database.sql
+/backend/setup_database.sql
+*.local.sql
