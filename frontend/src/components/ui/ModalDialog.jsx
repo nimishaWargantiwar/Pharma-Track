@@ -14,6 +14,10 @@ const SIZE_CLASSES = {
   '3xl': 'max-w-3xl',
   '4xl': 'max-w-4xl',
   '5xl': 'max-w-5xl',
+  '6xl': 'max-w-6xl',
+  '7xl': 'max-w-7xl',
+  full: 'w-[96vw] max-w-[96vw]',
+  workspace: 'w-[94vw] max-w-[1680px]',
 };
 
 const FOCUSABLE_TAGS = new Set(['button', 'input', 'select', 'textarea', 'summary']);
@@ -219,7 +223,7 @@ export default function ModalDialog({
     return null;
   }
 
-  const sizeClass = SIZE_CLASSES[size] || SIZE_CLASSES.md;
+  const sizeClass = SIZE_CLASSES[size] || (typeof size === 'string' && size.trim() !== '' ? size : SIZE_CLASSES.md);
   const resolvedLabelledBy = ariaLabelledBy || (title ? titleId : undefined);
   const resolvedDescribedBy = ariaDescribedBy || (description ? descriptionId : undefined);
   const HeadingTag = headingAs === 'h3' ? 'h3' : 'h2';

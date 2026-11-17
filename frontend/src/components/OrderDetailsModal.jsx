@@ -19,6 +19,7 @@ import {
   Package,
   QrCode,
   ArrowRightLeft,
+  Sparkles,
 } from 'lucide-react';
 import { getOrderById, updateOrderStatus, updateBatchStatus } from '../services/orderApi';
 import { getOrderMaterialRequirements } from '../services/inventoryApi';
@@ -49,7 +50,7 @@ import {
   canViewRecipes,
 } from '../utils/rbacUtils.js';
 
-export default function OrderDetailsModal({ isOpen, onClose, orderId, onOrderUpdated }) {
+export default function OrderDetailsModal({ isOpen, onClose, orderId, onOrderUpdated, onOpenCopilot = null }) {
   const { role } = useAuth();
   const { navigateToTab } = useNavigation();
   const canManageOrders = canManageManufacturingOrders(role);
@@ -512,6 +513,26 @@ export default function OrderDetailsModal({ isOpen, onClose, orderId, onOrderUpd
             </div>
 
             <div className="flex items-center space-x-2 shrink-0">
+              {order?.orderNumber && typeof onOpenCopilot === 'function' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenCopilot({
+                      activeModule: 'orders',
+                      contextType: 'MANUFACTURING_ORDER',
+                      contextId: order.orderNumber,
+                      title: `${order.orderNumber} (${order.productName || 'Order'})`,
+                    });
+                  }}
+                  data-testid="order-ask-copilot-button"
+                  title={`Ask PharmaTrack AI Copilot about order ${order.orderNumber}`}
+                  aria-label={`Ask AI Copilot about order ${order.orderNumber}`}
+                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border border-pharma-200 bg-pharma-50 hover:bg-pharma-100 text-pharma-700 text-xs font-semibold shadow-2xs transition-colors"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-pharma-600" aria-hidden="true" />
+                  <span className="hidden sm:inline">Ask Copilot</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={fetchOrderDetails}

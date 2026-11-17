@@ -111,6 +111,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/me").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/ai/query").authenticated()
+                        .requestMatchers("/api/ai/conversations", "/api/ai/conversations/**").authenticated()
                         .requestMatchers("/api/admin/users/**").hasRole("ADMIN")
 
                         // Products
@@ -160,6 +162,18 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PATCH,
                                 "/api/batches/*/steps/*/start",
                                 "/api/batches/*/steps/*/complete").hasRole("OPERATOR")
+
+                        // AI Batch Analysis Reports
+                        .requestMatchers(HttpMethod.POST, "/api/batches/*/analysis-reports")
+                        .hasRole("PRODUCTION_SUPERVISOR")
+                        .requestMatchers(HttpMethod.PATCH, "/api/batches/*/analysis-reports/*/archive")
+                        .hasAnyRole("ADMIN", "PRODUCTION_SUPERVISOR")
+                        .requestMatchers(HttpMethod.DELETE, "/api/batches/*/analysis-reports/*")
+                        .hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/batches/*/analysis-reports",
+                                "/api/batches/*/analysis-reports/*")
+                        .hasAnyRole("ADMIN", "PRODUCTION_SUPERVISOR", "QA_REVIEWER")
 
                         // Quality Management (QC, QA Disposition, Append-Only Audit Trail)
                         .requestMatchers(HttpMethod.GET, "/api/quality/batches", "/api/quality/batches/*")

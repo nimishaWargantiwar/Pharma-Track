@@ -215,6 +215,35 @@ test('BatchTraceability renders all 8 sections (A through H) when dossier is loa
   }
 });
 
+test('BatchTraceability renders neutral deviation message when deviations list is empty', async () => {
+  const { default: BatchTraceability } = await import('./BatchTraceability.jsx');
+  const dom = await createDomEnvironment('http://localhost:5173/#/traceability?batchNumber=BAT-2026-0010-01');
+
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url.includes('/api/batches/traceability/')) {
+      return jsonResponse({ ...mockDossier, deviations: [] }, 200, url);
+    }
+    return jsonResponse({}, 404, url);
+  };
+
+  try {
+    await dom.render(React.createElement(BatchTraceability, { initialBatchNumber: 'BAT-2026-0010-01' }));
+    const text = dom.container.textContent;
+    assert.ok(
+      text.includes('No deviations or non-conformances are recorded for this batch.'),
+      'Neutral deviation message rendered'
+    );
+    assert.strictEqual(
+      text.includes('100% Compliant'),
+      false,
+      'Unsupported 100% Compliant claim must not be present'
+    );
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
 test('BatchTraceability handles batch not found error gracefully', async () => {
   const { default: BatchTraceability } = await import('./BatchTraceability.jsx');
   const dom = await createDomEnvironment('http://localhost:5173/#/traceability');
@@ -480,6 +509,289 @@ test('BatchTraceability handles camera permission denial without leaving a black
       delete window.BarcodeDetector;
       delete globalThis.BarcodeDetector;
     }
+  }
+});
+
+test('BatchTraceability reacts to NavigationContext routeParam changes and loads second batch while mounted', async () => {
+  const { default: BatchTraceability } = await import('./BatchTraceability.jsx');
+  const { NavigationProvider } = await import('../context/NavigationContext.jsx');
+
+  const dossier1 = {
+    ...mockDossier,
+    batchId: 101,
+    batchNumber: 'BAT-2026-0001-01',
+    actualYield: 248.5,
+  };
+  const dossier2 = {
+    ...mockDossier,
+    batchId: 102,
+    batchNumber: 'BAT-2026-0001-02',
+    actualYield: 249.0,
+  };
+
+  const requestedUrls = [];
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const urlStr = String(url);
+    requestedUrls.push(urlStr);
+    if (urlStr.includes('BAT-2026-0001-01')) {
+      return jsonResponse(dossier1);
+    }
+    if (urlStr.includes('BAT-2026-0001-02')) {
+      return jsonResponse(dossier2);
+    }
+    return jsonResponse({}, 404);
+  };
+
+  const dom = await createDomEnvironment('http://localhost:5173/#/traceability');
+
+  try {
+    let routeState = {
+      activeTab: 'traceability',
+      routeParams: new URLSearchParams('batchNumber=BAT-2026-0001-01'),
+      routeNonce: 1,
+      navigateToTab: () => {},
+    };
+
+    function Harness() {
+      const [currentRoute, setCurrentRoute] = React.useState(routeState);
+      Harness.setRoute = setCurrentRoute;
+      return React.createElement(
+        NavigationProvider,
+        { value: currentRoute },
+        React.createElement(BatchTraceability, {})
+      );
+    }
+
+    await dom.render(React.createElement(Harness));
+    await dom.flush();
+    await new Promise((r) => setTimeout(r, 50));
+    await dom.flush();
+
+    // Verify first batch dossier loaded
+    assert.ok(dom.container.textContent.includes('BAT-2026-0001-01'));
+    assert.ok(dom.container.textContent.includes('248.5'));
+    assert.ok(requestedUrls.some((u) => u.includes('BAT-2026-0001-01')));
+
+    // Simulate in-tab navigation to second batch (BAT-2026-0001-02)
+    await dom.act(async () => {
+      Harness.setRoute({
+        activeTab: 'traceability',
+        routeParams: new URLSearchParams('batchNumber=BAT-2026-0001-02'),
+        routeNonce: 2,
+        navigateToTab: () => {},
+      });
+    });
+    await dom.flush();
+    await dom.act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    await dom.flush();
+
+    // Verify second batch dossier automatically loaded without unmounting
+    assert.ok(dom.container.textContent.includes('BAT-2026-0001-02'));
+    assert.ok(dom.container.textContent.includes('249'));
+    assert.ok(requestedUrls.some((u) => u.includes('BAT-2026-0001-02')));
+  } finally {
+    globalThis.fetch = prevFetch;
+    await dom.unmount?.();
+  }
+});
+
+test('Rapidly requesting two batch citations drops stale responses and renders the latest selection', async () => {
+  const { default: BatchTraceability } = await import('./BatchTraceability.jsx');
+  const { NavigationProvider } = await import('../context/NavigationContext.jsx');
+
+  const dossierSlow = {
+    ...mockDossier,
+    batchId: 201,
+    batchNumber: 'BAT-SLOW-01',
+    actualYield: 111.1,
+  };
+  const dossierFast = {
+    ...mockDossier,
+    batchId: 202,
+    batchNumber: 'BAT-FAST-02',
+    actualYield: 222.2,
+  };
+
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const urlStr = String(url);
+    if (urlStr.includes('BAT-SLOW-01')) {
+      // Simulate slow response
+      await new Promise((r) => setTimeout(r, 100));
+      return jsonResponse(dossierSlow);
+    }
+    if (urlStr.includes('BAT-FAST-02')) {
+      // Fast response
+      await new Promise((r) => setTimeout(r, 10));
+      return jsonResponse(dossierFast);
+    }
+    return jsonResponse({}, 404);
+  };
+
+  const dom = await createDomEnvironment('http://localhost:5173/#/traceability');
+
+  try {
+    let setRouteFn;
+    function Harness() {
+      const [currentRoute, setCurrentRoute] = React.useState({
+        activeTab: 'traceability',
+        routeParams: new URLSearchParams('batchNumber=BAT-SLOW-01'),
+        routeNonce: 1,
+        navigateToTab: () => {},
+      });
+      setRouteFn = setCurrentRoute;
+      return React.createElement(
+        NavigationProvider,
+        { value: currentRoute },
+        React.createElement(BatchTraceability, {})
+      );
+    }
+
+    await dom.render(React.createElement(Harness));
+    await dom.flush();
+
+    // Rapidly switch to FAST-02 before SLOW-01 resolves
+    await dom.act(async () => {
+      setRouteFn({
+        activeTab: 'traceability',
+        routeParams: new URLSearchParams('batchNumber=BAT-FAST-02'),
+        routeNonce: 2,
+        navigateToTab: () => {},
+      });
+    });
+    await dom.flush();
+
+    // Wait until both slow and fast responses resolve inside act
+    await dom.act(async () => {
+      await new Promise((r) => setTimeout(r, 150));
+    });
+    await dom.flush();
+
+    // Verify FAST-02 is the rendered dossier and SLOW-01 was discarded
+    assert.ok(dom.container.textContent.includes('BAT-FAST-02'));
+    assert.ok(dom.container.textContent.includes('222.2'));
+    assert.strictEqual(dom.container.textContent.includes('BAT-SLOW-01'), false);
+    assert.strictEqual(dom.container.textContent.includes('111.1'), false);
+  } finally {
+    globalThis.fetch = prevFetch;
+    await dom.unmount?.();
+  }
+});
+
+test('BatchTraceability: mounts AI Batch Analysis Workspace when view=analysis route param is present', async () => {
+  const { default: BatchTraceability } = await import('./BatchTraceability.jsx');
+  const { NavigationProvider } = await import('../context/NavigationContext.jsx');
+  const { AuthContext } = await import('../context/AuthContext.jsx');
+
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/analysis-reports')) return jsonResponse([]);
+    if (String(url).includes('/traceability/BAT-2026-0010-01')) return jsonResponse(mockDossier);
+    return jsonResponse({});
+  };
+
+  const dom = await createDomEnvironment('http://localhost:5173/#/traceability?batchNumber=BAT-2026-0010-01&view=analysis');
+
+  try {
+    const routeParams = new URLSearchParams('batchNumber=BAT-2026-0010-01&view=analysis');
+    function Harness() {
+      return React.createElement(
+        AuthContext.Provider,
+        { value: { user: { role: 'PRODUCTION_SUPERVISOR' }, role: 'PRODUCTION_SUPERVISOR' } },
+        React.createElement(
+          NavigationProvider,
+          {
+            value: {
+              activeTab: 'traceability',
+              routeParams,
+              routeNonce: 1,
+              navigateToTab: () => {},
+            },
+          },
+          React.createElement(BatchTraceability, {})
+        )
+      );
+    }
+
+    await dom.render(React.createElement(Harness));
+    await dom.flush();
+    await dom.act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    await dom.flush();
+
+    // Verify workspace is mounted
+    const workspace = dom.container.querySelector('[data-testid="ai-batch-analysis-workspace"]');
+    assert.ok(workspace, 'AI Batch Analysis Workspace must be mounted when view=analysis');
+  } finally {
+    globalThis.fetch = prevFetch;
+    await dom.unmount?.();
+  }
+});
+
+test('BatchTraceability: Back to Dossier action removes view=analysis and restores dossier view', async () => {
+  const { default: BatchTraceability } = await import('./BatchTraceability.jsx');
+  const { NavigationProvider } = await import('../context/NavigationContext.jsx');
+  const { AuthContext } = await import('../context/AuthContext.jsx');
+
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/analysis-reports')) return jsonResponse([]);
+    if (String(url).includes('/traceability/BAT-2026-0010-01')) return jsonResponse(mockDossier);
+    return jsonResponse({});
+  };
+
+  const dom = await createDomEnvironment('http://localhost:5173/#/traceability?batchNumber=BAT-2026-0010-01&view=analysis');
+
+  try {
+    let navigatedTab = null;
+    let navigatedParams = null;
+    const routeParams = new URLSearchParams('batchNumber=BAT-2026-0010-01&view=analysis');
+
+    function Harness() {
+      return React.createElement(
+        AuthContext.Provider,
+        { value: { user: { role: 'PRODUCTION_SUPERVISOR' }, role: 'PRODUCTION_SUPERVISOR' } },
+        React.createElement(
+          NavigationProvider,
+          {
+            value: {
+              activeTab: 'traceability',
+              routeParams,
+              routeNonce: 1,
+              navigateToTab: (tab, params) => {
+                navigatedTab = tab;
+                navigatedParams = params;
+              },
+            },
+          },
+          React.createElement(BatchTraceability, {})
+        )
+      );
+    }
+
+    await dom.render(React.createElement(Harness));
+    await dom.flush();
+    await dom.act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    await dom.flush();
+
+    const backBtn = dom.container.querySelector('[data-testid="back-to-traceability-button"]');
+    assert.ok(backBtn, 'Back to Dossier button must exist in workspace header');
+
+    await dom.click(backBtn);
+    await dom.flush();
+
+    assert.equal(navigatedTab, 'traceability', 'Should navigate to traceability');
+    assert.equal(navigatedParams.batchNumber, 'BAT-2026-0010-01', 'Should preserve batchNumber');
+    assert.strictEqual(navigatedParams.view, undefined, 'view=analysis must be removed from URL');
+  } finally {
+    globalThis.fetch = prevFetch;
+    await dom.unmount?.();
   }
 });
 

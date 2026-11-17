@@ -13,6 +13,7 @@ import {
   canCreateCapaAction,
   canExecuteCapaAction,
   canExecuteProductionSteps,
+  canGenerateBatchAnalysis,
   canInvestigateDeviation,
   canIssueMaterials,
   canManageManufacturingOrders,
@@ -21,6 +22,7 @@ import {
   canManageUsers,
   canManageWarehouses,
   canPerformQaDisposition,
+  canPermanentlyDeleteBatchAnalysis,
   canReceiveGoods,
   canRecordQcChecks,
   canReopenCapaPhase,
@@ -28,6 +30,7 @@ import {
   canStartBatchRole,
   canStartCapaPhase,
   canVerifyAndCloseDeviation,
+  canViewBatchAnalysis,
   canViewGlobalAuditTrail,
   canViewInventory,
   canViewRecipes,
@@ -219,5 +222,24 @@ test('module and action predicates accurately enforce separation of duties acros
   assert.equal(canAdjustStock(ROLES.QA_REVIEWER), true);
   assert.equal(canAdjustStock(ROLES.OPERATOR), false);
   assert.equal(canAdjustStock(ROLES.QC_ANALYST), false);
+
+  // Dedicated AI Batch Analysis Reports
+  assert.equal(canGenerateBatchAnalysis(ROLES.PRODUCTION_SUPERVISOR), true);
+  assert.equal(canGenerateBatchAnalysis(ROLES.ADMIN), false);
+  assert.equal(canGenerateBatchAnalysis(ROLES.QA_REVIEWER), false);
+  assert.equal(canGenerateBatchAnalysis(ROLES.OPERATOR), false);
+  assert.equal(canGenerateBatchAnalysis(ROLES.QC_ANALYST), false);
+
+  assert.equal(canViewBatchAnalysis(ROLES.PRODUCTION_SUPERVISOR), true);
+  assert.equal(canViewBatchAnalysis(ROLES.QA_REVIEWER), true);
+  assert.equal(canViewBatchAnalysis(ROLES.ADMIN), true);
+  assert.equal(canViewBatchAnalysis(ROLES.OPERATOR), false);
+  assert.equal(canViewBatchAnalysis(ROLES.QC_ANALYST), false);
+
+  assert.equal(canPermanentlyDeleteBatchAnalysis(ROLES.ADMIN), true);
+  assert.equal(canPermanentlyDeleteBatchAnalysis(ROLES.PRODUCTION_SUPERVISOR), false);
+  assert.equal(canPermanentlyDeleteBatchAnalysis(ROLES.QA_REVIEWER), false);
+  assert.equal(canPermanentlyDeleteBatchAnalysis(ROLES.OPERATOR), false);
+  assert.equal(canPermanentlyDeleteBatchAnalysis(ROLES.QC_ANALYST), false);
 });
 

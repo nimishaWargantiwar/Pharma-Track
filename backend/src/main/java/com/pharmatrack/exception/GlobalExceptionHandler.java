@@ -1,5 +1,7 @@
 package com.pharmatrack.exception;
 
+import com.pharmatrack.ai.client.LlmClientException;
+import com.pharmatrack.ai.exception.BatchAnalysisValidationException;
 import com.pharmatrack.dto.ErrorResponse;
 import jakarta.persistence.LockTimeoutException;
 import jakarta.persistence.OptimisticLockException;
@@ -21,7 +23,9 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.AuthenticationException;
+import com.pharmatrack.security.JwtAuthenticationException;
 import org.springframework.transaction.TransactionException;
 import org.springframework.transaction.TransactionSystemException;
 import org.springframework.validation.FieldError;
@@ -192,6 +196,15 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgumentException(IllegalArgumentException ex) {
+        return buildErrorResponse(
+                HttpStatus.BAD_REQUEST,
+                "Bad Request",
+                safeDomainMessage(ex.getMessage(), BAD_REQUEST_FALLBACK)
+        );
+    }
+
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuthenticationException(AuthenticationException ex) {
         String safeMessage = SensitiveDataSanitizer.sanitizeAuthenticationMessage(ex);
@@ -202,10 +215,21 @@ public class GlobalExceptionHandler {
                     currentRequestSummary(),
                     SensitiveDataSanitizer.formatSafeExceptionForLog(ex));
         }
-        return buildErrorResponse(
-                HttpStatus.UNAUTHORIZED,
-                HttpStatus.UNAUTHORIZED.getReasonPhrase(),
-                safeMessage
+        String errorCode;
+        if (ex instanceof JwtAuthenticationException jwtEx) {
+            errorCode = jwtEx.getErrorCode();
+        } else if (ex instanceof DisabledException) {
+            errorCode = JwtAuthenticationException.CODE_ACCOUNT_DISABLED;
+        } else {
+            errorCode = JwtAuthenticationException.CODE_AUTHENTICATION_REQUIRED;
+        }
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                new ErrorResponse(
+                        HttpStatus.UNAUTHORIZED.value(),
+                        HttpStatus.UNAUTHORIZED.getReasonPhrase(),
+                        safeMessage,
+                        errorCode
+                )
         );
     }
 
@@ -397,6 +421,61 @@ public class GlobalExceptionHandler {
         }
 
         return logAndBuildUnexpectedServerError(ex);
+    }
+
+    @ExceptionHandler(LlmClientException.class)
+    public ResponseEntity<ErrorResponse> handleLlmClientException(LlmClientException ex) {
+        String safeMessage = safeDomainMessage(ex.getMessage(), "AI provider communication error.");
+        log.warn("AI Copilot request failed [category={}, httpStatus={}]: {}",
+                ex.getCategory(), ex.getHttpStatus(), safeMessage);
+        HttpStatus status;
+        String message;
+        switch (ex.getCategory()) {
+            case CONFIGURATION_ERROR -> {
+                status = HttpStatus.SERVICE_UNAVAILABLE;
+                message = "PharmaTrack AI Copilot is currently unavailable.";
+            }
+            case TIMEOUT -> {
+                status = HttpStatus.GATEWAY_TIMEOUT;
+                message = "AI service timed out while generating response.";
+            }
+            case RATE_LIMITED -> {
+                status = HttpStatus.TOO_MANY_REQUESTS;
+                message = "AI service is temporarily busy. Please retry shortly.";
+            }
+            case UNAUTHORIZED, FORBIDDEN -> {
+                status = HttpStatus.BAD_GATEWAY;
+                message = "AI service authentication or authorization failed.";
+            }
+            case INVALID_RESPONSE -> {
+                status = HttpStatus.BAD_GATEWAY;
+                String rawMsg = ex.getMessage();
+                if (rawMsg != null && rawMsg.contains("incomplete output")) {
+                    message = "AI provider generated incomplete output. Please retry generation.";
+                } else {
+                    message = "AI service is temporarily unavailable. Please retry later.";
+                }
+            }
+            case CONNECTION_FAILURE, SERVER_ERROR, BAD_REQUEST -> {
+                status = HttpStatus.BAD_GATEWAY;
+                message = "AI service is temporarily unavailable. Please retry later.";
+            }
+            default -> {
+                status = HttpStatus.INTERNAL_SERVER_ERROR;
+                message = "An error occurred while processing AI request.";
+            }
+        }
+        return buildErrorResponse(status, status.getReasonPhrase(), message);
+    }
+
+    @ExceptionHandler(BatchAnalysisValidationException.class)
+    public ResponseEntity<ErrorResponse> handleBatchAnalysisValidationException(BatchAnalysisValidationException ex) {
+        log.warn("Batch analysis report validation failed: {}", SensitiveDataSanitizer.sanitizeForLog(ex.getMessage()));
+        return buildErrorResponse(
+                HttpStatus.BAD_GATEWAY,
+                "Bad Gateway",
+                "AI batch analysis report generation failed output compliance validation."
+        );
     }
 
     @ExceptionHandler({DataAccessException.class, TransactionException.class, SQLException.class})

@@ -92,7 +92,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String token = authHeader.substring(BEARER_PREFIX.length()).trim();
         if (token.isEmpty()) {
-            failAuthentication(request, response, new BadCredentialsException("Authentication token is missing"));
+            failAuthentication(request, response, new JwtAuthenticationException(JwtAuthenticationException.CODE_AUTHENTICATION_REQUIRED, "Authentication token is missing"));
             return;
         }
 
@@ -100,16 +100,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             JwtService.ParsedJwtToken parsed = jwtService.parseAndValidate(token);
 
             UserAccount user = userAccountRepository.findById(parsed.userId())
-                    .orElseThrow(() -> new BadCredentialsException("User account is unavailable"));
+                    .orElseThrow(() -> new JwtAuthenticationException(JwtAuthenticationException.CODE_TOKEN_INVALID, "User account is unavailable"));
 
             if (!user.getUsername().equalsIgnoreCase(parsed.username())) {
-                throw new BadCredentialsException("Authentication token does not match account");
+                throw new JwtAuthenticationException(JwtAuthenticationException.CODE_TOKEN_INVALID, "Authentication token does not match account");
             }
             if (!user.isEnabled()) {
-                throw new DisabledException("User account is disabled");
+                throw new JwtAuthenticationException(JwtAuthenticationException.CODE_ACCOUNT_DISABLED, "User account is disabled");
             }
             if (user.getTokenVersion() != parsed.tokenVersion() || user.getRole() != parsed.role()) {
-                throw new BadCredentialsException("Authentication token has been revoked");
+                throw new JwtAuthenticationException(JwtAuthenticationException.CODE_TOKEN_REVOKED, "Authentication token has been revoked");
             }
 
             CustomUserDetails principal = CustomUserDetails.fromEntity(user);
@@ -152,6 +152,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         SecurityContextHolder.clearContext();
         String safeMessage = SensitiveDataSanitizer.sanitizeAuthenticationMessage(ex);
         request.setAttribute(RestAuthenticationEntryPoint.AUTH_ERROR_MESSAGE_ATTR, safeMessage);
+        if (ex instanceof JwtAuthenticationException jwtEx) {
+            request.setAttribute(RestAuthenticationEntryPoint.AUTH_ERROR_CODE_ATTR, jwtEx.getErrorCode());
+        } else if (ex instanceof DisabledException) {
+            request.setAttribute(RestAuthenticationEntryPoint.AUTH_ERROR_CODE_ATTR, JwtAuthenticationException.CODE_ACCOUNT_DISABLED);
+        } else {
+            request.setAttribute(RestAuthenticationEntryPoint.AUTH_ERROR_CODE_ATTR, JwtAuthenticationException.CODE_AUTHENTICATION_REQUIRED);
+        }
         authenticationEntryPoint.commence(request, response, ex);
     }
 

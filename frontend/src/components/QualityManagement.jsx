@@ -33,6 +33,7 @@ import {
   summarizeAuditChanges,
 } from './ui/index.js';
 import { getQualityQueue, getAuditLogs } from '../services/qualityApi';
+import { getDeviations } from '../services/deviationApi';
 import {
   assessBatchReleaseEligibility,
   QA_RELEASE_POLICY_COPY,
@@ -145,25 +146,46 @@ export default function QualityManagement() {
 
   const requestedBatchId = routeParams?.get?.('batchId');
   const requestedDeviationId = routeParams?.get?.('deviationId');
+  const requestedDeviationNumber = routeParams?.get?.('deviationNumber');
   const requestedView = routeParams?.get?.('view');
 
   useEffect(() => {
-    if (!requestedBatchId && !requestedDeviationId && !requestedView) {
+    if (!requestedBatchId && !requestedDeviationId && !requestedDeviationNumber && !requestedView) {
       return;
     }
-    const linkKey = `${routeNonce}|${requestedBatchId || ''}|${requestedDeviationId || ''}|${requestedView || ''}`;
+    const linkKey = `${routeNonce}|${requestedBatchId || ''}|${requestedDeviationId || ''}|${requestedDeviationNumber || ''}|${requestedView || ''}`;
     if (consumedRouteRef.current === linkKey) {
       return;
     }
     consumedRouteRef.current = linkKey;
 
-    if (requestedDeviationId) {
-      const numericDevId = Number(requestedDeviationId);
+    const targetDevIdentifier = requestedDeviationId || requestedDeviationNumber;
+    if (targetDevIdentifier) {
+      const numericDevId = Number(targetDevIdentifier);
       setSelectedBatchId(null);
-      setSelectedDeviationState({
-        id: Number.isFinite(numericDevId) && numericDevId > 0 ? numericDevId : requestedDeviationId,
-        returnToBatchId: null,
-      });
+      if (Number.isFinite(numericDevId) && numericDevId > 0) {
+        setSelectedDeviationState({
+          id: numericDevId,
+          returnToBatchId: null,
+        });
+      } else {
+        setSubView('deviations');
+        getDeviations()
+          .then((devs) => {
+            if (Array.isArray(devs)) {
+              const cleanId = String(targetDevIdentifier).trim().toLowerCase();
+              const match = devs.find(
+                (d) =>
+                  String(d?.deviationNumber || '').trim().toLowerCase() === cleanId ||
+                  String(d?.id || '').trim().toLowerCase() === cleanId
+              );
+              if (match?.id) {
+                setSelectedDeviationState({ id: match.id, returnToBatchId: null });
+              }
+            }
+          })
+          .catch(() => {});
+      }
       return;
     }
 
@@ -189,7 +211,7 @@ export default function QualityManagement() {
       setSelectedDeviationState(null);
       setSubView('queue');
     }
-  }, [requestedBatchId, requestedDeviationId, requestedView, routeNonce, canViewAudit]);
+  }, [requestedBatchId, requestedDeviationId, requestedDeviationNumber, requestedView, routeNonce, canViewAudit]);
 
   useEffect(() => {
     if (

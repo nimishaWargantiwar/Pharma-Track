@@ -19,6 +19,7 @@ import {
   QrCode,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
   User,
   Users,
   Warehouse,
@@ -48,6 +49,8 @@ import InventoryManagement from './components/InventoryManagement.jsx';
 import QualityManagement from './components/QualityManagement.jsx';
 import BatchTraceability from './components/BatchTraceability.jsx';
 import UserManagement from './components/UserManagement.jsx';
+import AiCopilotDrawer from './components/AiCopilotDrawer.jsx';
+import ReauthModal from './components/ReauthModal.jsx';
 import InlineAlert from './components/ui/InlineAlert.jsx';
 import StatusBadge from './components/ui/StatusBadge.jsx';
 import { getFocusableElements } from './components/ui/ModalDialog.jsx';
@@ -116,6 +119,16 @@ export function getTabFromLocation() {
   return parseHashRoute().tab;
 }
 
+function getSessionStorage() {
+  if (typeof window !== 'undefined' && window.sessionStorage) {
+    return window.sessionStorage;
+  }
+  if (typeof sessionStorage !== 'undefined') {
+    return sessionStorage;
+  }
+  return null;
+}
+
 function AppShell() {
   const {
     user,
@@ -129,6 +142,11 @@ function AppShell() {
     forbiddenBanner,
     logout,
     dismissForbiddenBanner,
+    sessionState,
+    isReauthenticating,
+    reauthReason,
+    reauthError,
+    reauthenticate,
   } = useAuth();
 
   const [routeState, setRouteState] = useState(() => {
@@ -147,6 +165,171 @@ function AppShell() {
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [isCopilotOpen, setIsCopilotOpen] = useState(() => {
+    if (user?.id) {
+      try {
+        return getSessionStorage()?.getItem(`pharmatrack_copilot_open_${user.id}`) === 'true';
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  });
+  const [copilotContext, setCopilotContext] = useState(() => {
+    if (user?.id) {
+      try {
+        const raw = getSessionStorage()?.getItem(`pharmatrack_copilot_context_${user.id}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return parsed && typeof parsed === 'object' ? parsed : null;
+        }
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
+
+  const prevUserRef = useRef(user?.id);
+
+  useEffect(() => {
+    if (prevUserRef.current && prevUserRef.current !== user?.id) {
+      try {
+        const storage = getSessionStorage();
+        if (storage) {
+          storage.removeItem(`pharmatrack_copilot_open_${prevUserRef.current}`);
+          storage.removeItem(`pharmatrack_copilot_view_${prevUserRef.current}`);
+          storage.removeItem(`pharmatrack_copilot_context_${prevUserRef.current}`);
+          storage.removeItem(`pharmatrack_copilot_active_conv_${prevUserRef.current}`);
+        }
+      } catch {
+        // Ignored
+      }
+      setIsCopilotOpen(false);
+      setCopilotContext(null);
+    } else if (user?.id) {
+      try {
+        const storage = getSessionStorage();
+        if (storage) {
+          const wasOpen = storage.getItem(`pharmatrack_copilot_open_${user.id}`);
+          if (wasOpen === 'true') {
+            setIsCopilotOpen(true);
+          } else if (wasOpen === 'false') {
+            setIsCopilotOpen(false);
+          }
+          const savedCtxStr = storage.getItem(`pharmatrack_copilot_context_${user.id}`);
+          if (savedCtxStr) {
+            try {
+              const parsed = JSON.parse(savedCtxStr);
+              if (parsed && typeof parsed === 'object') {
+                setCopilotContext(parsed);
+              }
+            } catch {
+              // Ignore invalid JSON
+            }
+          }
+        }
+      } catch {
+        // Ignored
+      }
+    }
+    prevUserRef.current = user?.id;
+  }, [user?.id]);
+
+  const handleOpenCopilot = useCallback((context = null) => {
+    if (context) {
+      setCopilotContext(context);
+      if (user?.id) {
+        try {
+          const { initialQuery, ...storableContext } = context;
+          getSessionStorage()?.setItem(
+            `pharmatrack_copilot_context_${user.id}`,
+            JSON.stringify(storableContext)
+          );
+        } catch {
+          // Ignored
+        }
+      }
+    }
+    setIsCopilotOpen(true);
+    if (user?.id) {
+      try {
+        getSessionStorage()?.setItem(`pharmatrack_copilot_open_${user.id}`, 'true');
+      } catch {
+        // Ignored
+      }
+    }
+  }, [user?.id]);
+
+  const handleCloseCopilot = useCallback(() => {
+    setIsCopilotOpen(false);
+    if (user?.id) {
+      try {
+        getSessionStorage()?.setItem(`pharmatrack_copilot_open_${user.id}`, 'false');
+      } catch {
+        // Ignored
+      }
+    }
+  }, [user?.id]);
+
+  const handleNavigateSource = useCallback(() => {
+    setIsCopilotOpen(false);
+    if (user?.id) {
+      try {
+        getSessionStorage()?.setItem(`pharmatrack_copilot_open_${user.id}`, 'false');
+      } catch {
+        // Ignored
+      }
+    }
+  }, [user?.id]);
+
+  const handleClearCopilotContext = useCallback(() => {
+    setCopilotContext(null);
+    if (user?.id) {
+      try {
+        getSessionStorage()?.removeItem(`pharmatrack_copilot_context_${user.id}`);
+      } catch {
+        // Ignored
+      }
+    }
+  }, [user?.id]);
+
+  const handleCopilotContextChange = useCallback((newContext) => {
+    setCopilotContext(newContext);
+    if (user?.id) {
+      try {
+        if (newContext) {
+          getSessionStorage()?.setItem(
+            `pharmatrack_copilot_context_${user.id}`,
+            JSON.stringify(newContext)
+          );
+        } else {
+          getSessionStorage()?.removeItem(`pharmatrack_copilot_context_${user.id}`);
+        }
+      } catch {
+        // Ignored
+      }
+    }
+  }, [user?.id]);
+
+  const handleSignOut = useCallback(() => {
+    if (user?.id) {
+      try {
+        const storage = getSessionStorage();
+        if (storage) {
+          storage.removeItem(`pharmatrack_copilot_open_${user.id}`);
+          storage.removeItem(`pharmatrack_copilot_view_${user.id}`);
+          storage.removeItem(`pharmatrack_copilot_context_${user.id}`);
+          storage.removeItem(`pharmatrack_copilot_active_conv_${user.id}`);
+        }
+      } catch {
+        // Ignored
+      }
+    }
+    setIsCopilotOpen(false);
+    setCopilotContext(null);
+    logout();
+  }, [user?.id, logout]);
 
   const mobileMenuBtnRef = useRef(null);
   const mobileDrawerRef = useRef(null);
@@ -381,7 +564,7 @@ function AppShell() {
               <button
                 type="button"
                 disabled={Boolean(isRetryingSession)}
-                onClick={() => logout()}
+                onClick={() => handleSignOut()}
                 className="flex-1 inline-flex items-center justify-center space-x-2 px-4 py-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <LogOut className="w-4 h-4" />
@@ -529,6 +712,20 @@ function AppShell() {
               </button>
             </div>
 
+            {/* Global AI Copilot Trigger */}
+            <button
+              type="button"
+              onClick={() => handleOpenCopilot()}
+              aria-label="Open PharmaTrack AI Copilot"
+              aria-expanded={isCopilotOpen}
+              aria-controls="ai-copilot-drawer"
+              data-testid="global-ai-copilot-toggle"
+              className="inline-flex items-center space-x-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-sky-400/30 bg-pharma-800/80 hover:bg-pharma-700 text-sky-100 text-xs font-semibold shadow-2xs transition-colors"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-sky-300" aria-hidden="true" />
+              <span className="hidden sm:inline">AI Copilot</span>
+            </button>
+
             {/* Authenticated User Chip */}
             <div className="flex items-center space-x-1.5 sm:space-x-2 bg-[#091b2e]/60 border border-pharma-800 rounded-lg px-1.5 sm:px-2.5 py-1">
               <div className="w-6 h-6 rounded-full bg-pharma-700 text-sky-100 flex items-center justify-center shrink-0">
@@ -552,7 +749,7 @@ function AppShell() {
             {/* Logout Button */}
             <button
               type="button"
-              onClick={() => logout()}
+              onClick={() => handleSignOut()}
               aria-label="Sign Out"
               className="inline-flex items-center space-x-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-pharma-700 bg-pharma-800/80 hover:bg-pharma-700 text-slate-100 text-xs font-medium transition-colors"
             >
@@ -733,7 +930,7 @@ function AppShell() {
                   type="button"
                   onClick={() => {
                     closeMobileNav({ restoreFocus: false });
-                    logout();
+                    handleSignOut();
                   }}
                   className="w-full inline-flex items-center justify-center space-x-1.5 px-3 py-2 rounded-lg border border-pharma-700 bg-pharma-800 hover:bg-pharma-700 text-xs font-medium text-white transition-colors"
                 >
@@ -784,11 +981,15 @@ function AppShell() {
 
             {isCurrentTabAllowed && activeTab === 'products' && <ProductManagement />}
             {isCurrentTabAllowed && activeTab === 'recipes' && <RecipeManagement />}
-            {isCurrentTabAllowed && activeTab === 'orders' && <OrderManagement />}
+            {isCurrentTabAllowed && activeTab === 'orders' && (
+              <OrderManagement onOpenCopilot={handleOpenCopilot} />
+            )}
             {isCurrentTabAllowed && activeTab === 'execution' && <ProductionExecution />}
             {isCurrentTabAllowed && activeTab === 'inventory' && <InventoryManagement />}
             {isCurrentTabAllowed && activeTab === 'quality' && <QualityManagement />}
-            {isCurrentTabAllowed && activeTab === 'traceability' && <BatchTraceability />}
+            {isCurrentTabAllowed && activeTab === 'traceability' && (
+              <BatchTraceability onOpenCopilot={handleOpenCopilot} />
+            )}
             {isCurrentTabAllowed && activeTab === 'users' && <UserManagement />}
             {isCurrentTabAllowed && activeTab === 'system' && (
               <div>
@@ -1030,6 +1231,28 @@ function AppShell() {
           </footer>
         </div>
       </div>
+
+      {/* Global AI Copilot Right-Side Drawer */}
+      <AiCopilotDrawer
+        isOpen={isCopilotOpen}
+        onClose={handleCloseCopilot}
+        activeContext={copilotContext}
+        onClearContext={handleClearCopilotContext}
+        onContextChange={handleCopilotContextChange}
+        onNavigateSource={handleNavigateSource}
+      />
+
+      {/* Session Re-Authentication Modal */}
+      {isReauthenticating && (
+        <ReauthModal
+          user={user}
+          reauthReason={reauthReason}
+          reauthError={reauthError}
+          sessionState={sessionState}
+          onReauthenticate={reauthenticate}
+          onSignOut={handleSignOut}
+        />
+      )}
       </div>
     </NavigationProvider>
   );

@@ -290,3 +290,23 @@ export function canAdjustStock(role) {
   ]);
 }
 
+// -----------------------------------------------------------------------------
+// Dedicated AI Batch Analysis Reports
+// -----------------------------------------------------------------------------
+
+export function canGenerateBatchAnalysis(role) {
+  return hasAnyRole(role, [ROLES.PRODUCTION_SUPERVISOR]);
+}
+
+export function canViewBatchAnalysis(role) {
+  return hasAnyRole(role, [
+    ROLES.PRODUCTION_SUPERVISOR,
+    ROLES.QA_REVIEWER,
+    ROLES.ADMIN,
+  ]);
+}
+
+export function canPermanentlyDeleteBatchAnalysis(role) {
+  return hasAnyRole(role, [ROLES.ADMIN]);
+}
+

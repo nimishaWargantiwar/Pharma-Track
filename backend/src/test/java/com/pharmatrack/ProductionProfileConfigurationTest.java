@@ -363,11 +363,19 @@ class ProductionProfileConfigurationTest {
         assertTrue(List.of(localEnv.getActiveProfiles()).contains("local"));
         assertFalse(List.of(localEnv.getActiveProfiles()).contains("prod"));
         assertEquals("validate", localEnv.getProperty("spring.jpa.hibernate.ddl-auto"));
-        assertEquals("false", localEnv.getProperty("spring.flyway.enabled"));
+        assertEquals("true", localEnv.getProperty("spring.flyway.enabled"));
+        assertEquals("false", localEnv.getProperty("spring.flyway.baseline-on-migrate"));
+        assertEquals("true", localEnv.getProperty("spring.flyway.validate-on-migrate"));
         assertEquals("UTC", localEnv.getProperty("spring.jpa.properties.hibernate.jdbc.time_zone"));
         assertEquals("true", localEnv.getProperty("spring.jpa.properties.hibernate.type.java_time_use_direct_jdbc"));
         assertEquals("pharmatrack_app", localEnv.getProperty("spring.datasource.username"));
         assertTrue(localEnv.getProperty("spring.datasource.url", "").contains("/pharmatrack_db"));
+        assertEquals("true", localEnv.getProperty("app.ai.enabled"));
+        assertEquals("openai", localEnv.getProperty("app.ai.provider"));
+        assertEquals("https://api.groq.com/openai/v1", localEnv.getProperty("app.ai.base-url"));
+        assertEquals("openai/gpt-oss-20b", localEnv.getProperty("app.ai.model"));
+        assertNotNull(localEnv.getProperty("app.ai.api-key"));
+        assertFalse(localEnv.getProperty("app.ai.api-key").isBlank());
     }
 
     @Test
@@ -381,6 +389,9 @@ class ProductionProfileConfigurationTest {
                 app.jwt.secret=LocalOnlySecretThatIsLongEnoughFor256BitsVerification123456
                 app.security.local-demo.enabled=true
                 app.security.local-demo.password=LocalDemoPass99
+                spring.flyway.enabled=true
+                spring.flyway.baseline-on-migrate=false
+                spring.flyway.validate-on-migrate=true
                 """);
 
         String configLocations = "file:src/main/resources/,optional:file:" + tempConfigDir.toAbsolutePath() + "/";
@@ -401,7 +412,9 @@ class ProductionProfileConfigurationTest {
         assertEquals("local_custom_user", localEnv.getProperty("spring.datasource.username"));
         assertEquals("true", localEnv.getProperty("app.security.local-demo.enabled"));
         assertEquals("validate", localEnv.getProperty("spring.jpa.hibernate.ddl-auto"));
-        assertEquals("false", localEnv.getProperty("spring.flyway.enabled"));
+        assertEquals("true", localEnv.getProperty("spring.flyway.enabled"));
+        assertEquals("false", localEnv.getProperty("spring.flyway.baseline-on-migrate"));
+        assertEquals("true", localEnv.getProperty("spring.flyway.validate-on-migrate"));
 
         // Under prod profile, external application-local.properties MUST NOT load and missing prod env vars fail closed
         Exception prodWithoutVars = assertThrows(Exception.class, () -> {
@@ -442,6 +455,99 @@ class ProductionProfileConfigurationTest {
         assertEquals("false", testEnv.getProperty("spring.flyway.enabled"));
         assertEquals("false", testEnv.getProperty("app.security.bootstrap.enabled"));
         assertEquals("false", testEnv.getProperty("app.security.local-demo.enabled"));
+        assertEquals("false", testEnv.getProperty("app.ai.enabled"));
+    }
+
+    @Test
+    @DisplayName("14. Default local startup automatically imports AI copilot settings from config/application-local.properties without shell exports")
+    void localStartupAutomaticallyImportsAiConfigurationWithoutShellExports() {
+        AtomicReference<ConfigurableEnvironment> captured = new AtomicReference<>();
+        SpringApplication app = new SpringApplicationBuilder(PharmaTrackApplication.class)
+                .web(WebApplicationType.NONE)
+                .listeners((ApplicationListener<ApplicationPreparedEvent>) event -> {
+                    captured.set(event.getApplicationContext().getEnvironment());
+                    throw new AbortedAfterValidationException();
+                })
+                .build();
+
+        // Mirrors local startup: loading main application.properties which triggers spring.config.import
+        String[] args = new String[]{
+                "--spring.config.location=file:src/main/resources/application.properties"
+        };
+        assertThrows(AbortedAfterValidationException.class, () -> app.run(args));
+
+        ConfigurableEnvironment localEnv = captured.get();
+        assertNotNull(localEnv);
+        assertTrue(List.of(localEnv.getActiveProfiles()).contains("local"));
+        assertFalse(List.of(localEnv.getActiveProfiles()).contains("prod"));
+
+        // Imported from config/application-local.properties
+        assertEquals("true", localEnv.getProperty("app.ai.enabled"));
+        assertEquals("openai", localEnv.getProperty("app.ai.provider"));
+        assertEquals("https://api.groq.com/openai/v1", localEnv.getProperty("app.ai.base-url"));
+        assertEquals("openai/gpt-oss-20b", localEnv.getProperty("app.ai.model"));
+        assertNotNull(localEnv.getProperty("app.ai.api-key"));
+        assertFalse(localEnv.getProperty("app.ai.api-key").isBlank());
+    }
+
+    @Test
+    @DisplayName("15. Environment variable / System property overrides take precedence over imported application-local.properties")
+    void propertyOverridesTakePrecedenceOverImportedLocalConfig() {
+        AtomicReference<ConfigurableEnvironment> captured = new AtomicReference<>();
+        SpringApplication app = new SpringApplicationBuilder(PharmaTrackApplication.class)
+                .web(WebApplicationType.NONE)
+                .listeners((ApplicationListener<ApplicationPreparedEvent>) event -> {
+                    captured.set(event.getApplicationContext().getEnvironment());
+                    throw new AbortedAfterValidationException();
+                })
+                .build();
+
+        // Passing CLI / System override for model and enabled flag
+        String[] args = new String[]{
+                "--spring.config.location=file:src/main/resources/application.properties",
+                "--app.ai.model=custom-cli-model",
+                "--app.ai.enabled=false"
+        };
+        assertThrows(AbortedAfterValidationException.class, () -> app.run(args));
+
+        ConfigurableEnvironment localEnv = captured.get();
+        assertNotNull(localEnv);
+        assertEquals("false", localEnv.getProperty("app.ai.enabled"));
+        assertEquals("custom-cli-model", localEnv.getProperty("app.ai.model"));
+    }
+
+    @Test
+    @DisplayName("16. Missing local config file gracefully resolves with optional import without failing startup")
+    void missingLocalConfigFileGracefullyResolvesWithOptionalImport(@TempDir Path tempEmptyDir) throws Exception {
+        AtomicReference<ConfigurableEnvironment> captured = new AtomicReference<>();
+        SpringApplication app = new SpringApplicationBuilder(PharmaTrackApplication.class)
+                .web(WebApplicationType.NONE)
+                .listeners((ApplicationListener<ApplicationPreparedEvent>) event -> {
+                    captured.set(event.getApplicationContext().getEnvironment());
+                    throw new AbortedAfterValidationException();
+                })
+                .build();
+
+        // Synthetic properties file with optional import to non-existent file
+        Path syntheticProps = tempEmptyDir.resolve("application.properties");
+        Files.writeString(syntheticProps, """
+                spring.application.name=test-app
+                spring.profiles.active=local
+                spring.config.import=optional:file:""" + tempEmptyDir.resolve("nonexistent.properties").toAbsolutePath() + "\n" +
+                """
+                app.ai.enabled=${APP_AI_ENABLED:false}
+                app.ai.model=default-model
+                """);
+
+        String[] args = new String[]{
+                "--spring.config.location=file:" + syntheticProps.toAbsolutePath()
+        };
+        assertThrows(AbortedAfterValidationException.class, () -> app.run(args));
+
+        ConfigurableEnvironment localEnv = captured.get();
+        assertNotNull(localEnv);
+        assertEquals("false", localEnv.getProperty("app.ai.enabled"));
+        assertEquals("default-model", localEnv.getProperty("app.ai.model"));
     }
 
     private static final class AbortedAfterValidationException extends RuntimeException {

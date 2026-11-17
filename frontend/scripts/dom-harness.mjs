@@ -371,6 +371,7 @@ export class MiniEvent {
     this._stopped = false;
     this.target = null;
     this.currentTarget = null;
+    Object.assign(this, init);
   }
   preventDefault() {
     this.defaultPrevented = true;
@@ -557,6 +558,12 @@ export async function createDomEnvironment(initialUrl = 'http://localhost:5173/'
     });
   }
 
+  async function keyDown(el, key) {
+    await act(async () => {
+      el.dispatchEvent(new MiniEvent('keydown', { key, bubbles: true }));
+    });
+  }
+
   async function submit(formEl) {
     await act(async () => {
       formEl.dispatchEvent(new MiniEvent('submit', { bubbles: true }));
@@ -574,6 +581,7 @@ export async function createDomEnvironment(initialUrl = 'http://localhost:5173/'
     unmount,
     changeInput,
     click,
+    keyDown,
     submit,
   };
 }

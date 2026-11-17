@@ -1,0 +1,42 @@
+# ===================================================================
+# PharmaTrack MES & eBR - Local Development Configuration Template
+# ===================================================================
+# Copy this file to backend/config/application-local.properties:
+#   cp backend/config/application-local.properties.example backend/config/application-local.properties
+#
+# backend/config/application-local.properties is gitignored and will never be committed.
+# Spring Boot automatically imports this file in local development via:
+#   spring.config.import=optional:file:./config/application-local.properties,optional:file:./backend/config/application-local.properties
+#
+# Environment variables (if set) always override properties defined here.
+# ===================================================================
+
+# Local MySQL Database Credentials
+spring.datasource.url=jdbc:mysql://localhost:3306/pharmatrack_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+spring.datasource.username=pharmatrack_app
+spring.datasource.password=YOUR_LOCAL_DB_PASSWORD
+
+# Local Authentication, JWT Signing & Demo Users
+app.jwt.secret=YOUR_LOCAL_JWT_SECRET_AT_LEAST_32_CHARS_LONG_FOR_HMAC256
+app.jwt.expiration-ms=3600000
+app.security.local-demo.enabled=true
+app.security.local-demo.password=YOUR_LOCAL_DEMO_PASSWORD
+
+# ===================================================================
+# AI Copilot Local Configuration
+# ===================================================================
+# Set enabled to true and supply your AI provider API key below.
+# Supported providers: openai (default, compatible with OpenAI, Groq, Ollama, vLLM)
+app.ai.enabled=true
+app.ai.provider=openai
+app.ai.base-url=https://api.groq.com/openai/v1
+app.ai.model=openai/gpt-oss-20b
+app.ai.api-key=YOUR_LOCAL_AI_API_KEY_HERE
+app.ai.connect-timeout-ms=3000
+# Note: Read timeout is a socket-read inactivity timeout (SO_TIMEOUT), not a guaranteed total request deadline.
+app.ai.read-timeout-ms=60000
+app.ai.max-output-tokens=800
+app.ai.batch-analysis.max-output-tokens=4096
+
+
+app.ai.batch-analysis.permanent-delete.enabled=true

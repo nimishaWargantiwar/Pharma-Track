@@ -2,6 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import {
   clearAuthToken,
   getAuthToken,
+  notifyReauthFailure,
+  notifyReauthSuccess,
   setAuthToken,
   setForbiddenHandler,
   setUnauthorizedHandler,
@@ -14,13 +16,19 @@ export const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [token, setTokenState] = useState(() => getAuthToken());
   const [user, setUser] = useState(null);
+  const [sessionState, setSessionState] = useState(() => (getAuthToken() ? 'authenticated' : 'logged_out'));
   const [isInitializing, setIsInitializing] = useState(() => Boolean(getAuthToken()));
   const [isRetryingSession, setIsRetryingSession] = useState(false);
   const [sessionMessage, setSessionMessage] = useState(null);
   const [sessionRestoreError, setSessionRestoreError] = useState(null);
   const [forbiddenBanner, setForbiddenBanner] = useState(null);
 
+  const [reauthReason, setReauthReason] = useState(null);
+  const [reauthErrorCode, setReauthErrorCode] = useState(null);
+  const [reauthError, setReauthError] = useState(null);
+
   const mountedRef = useRef(true);
+  const userRef = useRef(null);
   const authEpochRef = useRef(0);
   const retryInFlightRef = useRef(false);
 
@@ -31,20 +39,59 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const handleUnauthorized = useCallback((info) => {
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  const logout = useCallback((reasonMessage = null) => {
+    authEpochRef.current += 1;
     clearAuthToken();
     if (!mountedRef.current) {
       return;
     }
     setTokenState(null);
     setUser(null);
+    setSessionState('logged_out');
+    setReauthReason(null);
+    setReauthErrorCode(null);
+    setReauthError(null);
     setIsInitializing(false);
     setIsRetryingSession(false);
     setSessionRestoreError(null);
     setForbiddenBanner(null);
     setSessionMessage(
-      info?.message || 'Your session has expired or is no longer valid. Please sign in again.'
+      typeof reasonMessage === 'string' && reasonMessage.trim() !== '' ? reasonMessage.trim() : null
     );
+  }, []);
+
+  const handleUnauthorized = useCallback((info) => {
+    if (!mountedRef.current) {
+      return;
+    }
+    const activeUser = userRef.current;
+    if (activeUser) {
+      // Retain active user state in memory; transition to reauth_required so workspace remains mounted
+      setTokenState(null);
+      setSessionState('reauth_required');
+      setReauthReason(
+        info?.message || 'Your session has expired. Please re-authenticate to continue.'
+      );
+      setReauthErrorCode(info?.errorCode || null);
+      setReauthError(null);
+    } else {
+      // Unauthenticated / bootstrap failure -> full sign-out
+      clearAuthToken();
+      setTokenState(null);
+      setUser(null);
+      setSessionState('logged_out');
+      setIsInitializing(false);
+      setIsRetryingSession(false);
+      setSessionRestoreError(null);
+      setForbiddenBanner(null);
+      setSessionMessage(
+        info?.message || 'Your session has expired or is no longer valid. Please sign in again.'
+      );
+    }
   }, []);
 
   const handleForbidden = useCallback((info) => {
@@ -71,6 +118,7 @@ export function AuthProvider({ children }) {
       if (!(isCancelled && isCancelled()) && mountedRef.current) {
         setTokenState(null);
         setUser(null);
+        setSessionState('logged_out');
         setSessionRestoreError(null);
         setIsInitializing(false);
         setIsRetryingSession(false);
@@ -95,6 +143,7 @@ export function AuthProvider({ children }) {
         clearAuthToken();
         setTokenState(null);
         setUser(null);
+        setSessionState('logged_out');
         setForbiddenBanner(null);
         setSessionRestoreError(null);
         setSessionMessage('Your account is disabled or unassigned. Please sign in again.');
@@ -103,6 +152,7 @@ export function AuthProvider({ children }) {
 
       setTokenState(getAuthToken() || existingToken);
       setUser(currentUser);
+      setSessionState('authenticated');
       setSessionMessage(null);
       setSessionRestoreError(null);
       return currentUser;
@@ -122,6 +172,7 @@ export function AuthProvider({ children }) {
         clearAuthToken();
         setTokenState(null);
         setUser(null);
+        setSessionState('logged_out');
         setForbiddenBanner(null);
         setSessionRestoreError(null);
         setSessionMessage(
@@ -134,6 +185,7 @@ export function AuthProvider({ children }) {
         // Transient network error or temporary backend outage: keep token intact for manual retry
         setTokenState(getAuthToken() || existingToken);
         setUser(null);
+        setSessionState('logged_out');
         setSessionMessage(null);
         setSessionRestoreError(
           err?.message ||
@@ -173,6 +225,7 @@ export function AuthProvider({ children }) {
     if (!existingToken) {
       setTokenState(null);
       setUser(null);
+      setSessionState('logged_out');
       setSessionRestoreError(null);
       setIsInitializing(false);
       setIsRetryingSession(false);
@@ -202,6 +255,10 @@ export function AuthProvider({ children }) {
     if (mountedRef.current) {
       setTokenState(accessToken);
       setUser(authenticatedUser);
+      setSessionState('authenticated');
+      setReauthReason(null);
+      setReauthErrorCode(null);
+      setReauthError(null);
       setIsInitializing(false);
       setIsRetryingSession(false);
       setSessionMessage(null);
@@ -211,22 +268,70 @@ export function AuthProvider({ children }) {
     return response;
   }, []);
 
-  const logout = useCallback((reasonMessage = null) => {
-    authEpochRef.current += 1;
-    clearAuthToken();
-    if (!mountedRef.current) {
-      return;
-    }
-    setTokenState(null);
-    setUser(null);
-    setIsInitializing(false);
-    setIsRetryingSession(false);
-    setSessionRestoreError(null);
-    setForbiddenBanner(null);
-    setSessionMessage(
-      typeof reasonMessage === 'string' && reasonMessage.trim() !== '' ? reasonMessage.trim() : null
-    );
-  }, []);
+  const reauthenticate = useCallback(
+    async ({ password }) => {
+      const activeUser = userRef.current;
+      if (!activeUser || !activeUser.username) {
+        throw new Error('No active user session to re-authenticate.');
+      }
+
+      setSessionState('reauth_in_progress');
+      setReauthError(null);
+
+      try {
+        const response = await loginUser({
+          username: activeUser.username,
+          password,
+        });
+
+        const accessToken = response?.accessToken;
+        const authenticatedUser = response?.user;
+
+        if (!accessToken || !authenticatedUser) {
+          throw new Error('Incomplete authentication response from server.');
+        }
+
+        // Strict identity verification: ID, username, and role must match the active session!
+        const isIdMatch = Number(authenticatedUser.id) === Number(activeUser.id);
+        const isUserMatch =
+          authenticatedUser.username?.toLowerCase() === activeUser.username?.toLowerCase();
+        const isRoleMatch = authenticatedUser.role === activeUser.role;
+
+        if (!isIdMatch || !isUserMatch || !isRoleMatch) {
+          notifyReauthFailure(new Error('Authenticated identity does not match active session.'));
+          logout('Authenticated identity does not match active session. Please sign in again.');
+          const mismatchErr = new Error('Authenticated identity does not match active session.');
+          mismatchErr.isIdentityMismatch = true;
+          throw mismatchErr;
+        }
+
+        authEpochRef.current += 1;
+        setAuthToken(accessToken);
+        if (mountedRef.current) {
+          setTokenState(accessToken);
+          setUser(authenticatedUser);
+          setSessionState('authenticated');
+          setReauthReason(null);
+          setReauthErrorCode(null);
+          setReauthError(null);
+          setSessionMessage(null);
+          setForbiddenBanner(null);
+        }
+        notifyReauthSuccess(accessToken);
+        return response;
+      } catch (err) {
+        if (err?.isIdentityMismatch) {
+          throw err;
+        }
+        if (mountedRef.current) {
+          setSessionState('reauth_failed');
+          setReauthError(err?.message || 'Invalid password. Please try again.');
+        }
+        throw err;
+      }
+    },
+    [logout]
+  );
 
   const clearSessionMessage = useCallback(() => {
     setSessionMessage(null);
@@ -237,13 +342,22 @@ export function AuthProvider({ children }) {
   }, []);
 
   const role = normalizeRole(user?.role);
-  const isAuthenticated = Boolean(token && user && user.enabled !== false && role);
+  const isAuthenticated = Boolean(user && user.enabled !== false && role && sessionState !== 'logged_out');
+  const isReauthenticating =
+    sessionState === 'reauth_required' ||
+    sessionState === 'reauth_in_progress' ||
+    sessionState === 'reauth_failed';
   const actorDisplay = formatActorDisplay(user);
 
   const value = {
     user,
     role,
     token,
+    sessionState,
+    isReauthenticating,
+    reauthReason,
+    reauthErrorCode,
+    reauthError,
     actorDisplay,
     isAuthenticated,
     isInitializing,
@@ -253,6 +367,7 @@ export function AuthProvider({ children }) {
     forbiddenBanner,
     login,
     logout,
+    reauthenticate,
     retrySessionRestore,
     clearSessionMessage,
     dismissForbiddenBanner,

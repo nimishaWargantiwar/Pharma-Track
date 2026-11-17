@@ -47,6 +47,9 @@ let inMemoryToken = null;
 let unauthorizedHandler = null;
 let forbiddenHandler = null;
 
+let isReauthPending = false;
+let queuedRequests = [];
+
 function readTokenFromSessionStorage() {
   if (typeof window === 'undefined') {
     return null;
@@ -81,14 +84,12 @@ function writeTokenToSessionStorage(token) {
  * Retrieve the currently active JWT bearer token from memory or sessionStorage.
  */
 export function getAuthToken() {
-  if (inMemoryToken && inMemoryToken.trim() !== '') {
-    return inMemoryToken;
-  }
-  const stored = readTokenFromSessionStorage();
-  if (stored) {
+  if (typeof window !== 'undefined' && window.sessionStorage) {
+    const stored = readTokenFromSessionStorage();
     inMemoryToken = stored;
+    return stored;
   }
-  return stored;
+  return inMemoryToken;
 }
 
 /**
@@ -102,11 +103,68 @@ export function setAuthToken(token) {
 }
 
 /**
- * Clear the JWT bearer token from memory and sessionStorage.
+ * Clear the JWT bearer token from memory and sessionStorage and reject any queued retry requests.
  */
 export function clearAuthToken() {
   inMemoryToken = null;
   writeTokenToSessionStorage(null);
+  if (isReauthPending || queuedRequests.length > 0) {
+    notifyReauthFailure(new Error('User signed out or session cleared.'));
+  }
+}
+
+/**
+ * Check whether a session re-authentication cycle is currently in progress.
+ */
+export function isReauthInProgress() {
+  return Boolean(isReauthPending);
+}
+
+/**
+ * Notify the API client of successful re-authentication.
+ * Updates the active token and replays queued GET requests at most once.
+ */
+export function notifyReauthSuccess(newToken) {
+  isReauthPending = false;
+  if (newToken) {
+    setAuthToken(newToken);
+  }
+  const pending = queuedRequests.slice();
+  queuedRequests = [];
+  pending.forEach(({ path, options, resolve, reject }) => {
+    apiRequest(path, { ...options, isRetry: true })
+      .then(resolve)
+      .catch(reject);
+  });
+}
+
+/**
+ * Notify the API client of failed or cancelled re-authentication.
+ * Rejects all queued requests and clears the queue.
+ */
+export function notifyReauthFailure(error) {
+  isReauthPending = false;
+  const failureErr = error || new Error('Session re-authentication failed.');
+  if (typeof failureErr.status === 'undefined') {
+    failureErr.status = 401;
+    failureErr.isUnauthorized = true;
+  }
+  const pending = queuedRequests.slice();
+  queuedRequests = [];
+  pending.forEach(({ reject }) => {
+    try {
+      reject(failureErr);
+    } catch (e) {
+      // Ignore uncaught rejection in listener
+    }
+  });
+}
+
+/**
+ * Reset re-authentication state and reject any pending requests.
+ */
+export function resetReauthState() {
+  notifyReauthFailure(new Error('Session reset.'));
 }
 
 /**
@@ -160,7 +218,18 @@ export function buildQueryString(params = {}, { ignoreAllSentinel = true } = {})
 /**
  * Parse API responses, normalize validation/business/auth errors, and trigger 401/403 hooks.
  */
-export async function handleResponse(response, { skipAuth = false, suppressForbiddenHandler = false } = {}) {
+export async function handleResponse(
+  response,
+  {
+    skipAuth = false,
+    suppressForbiddenHandler = false,
+    skipReauthQueue = false,
+    path = null,
+    method = 'GET',
+    isRetry = false,
+    requestOptions = {},
+  } = {}
+) {
   if (!response.ok) {
     let errorData = null;
     try {
@@ -177,22 +246,85 @@ export async function handleResponse(response, { skipAuth = false, suppressForbi
           : `Request failed with status ${response.status}`;
 
     const errorMessage = errorData?.message || fallbackMessage;
+    const errorCode = errorData?.errorCode;
     const error = new Error(errorMessage);
     error.status = response.status;
     error.validationErrors = errorData?.validationErrors || null;
     error.data = errorData;
+    error.errorCode = errorCode;
 
     if (response.status === 401) {
       error.isUnauthorized = true;
       if (!skipAuth) {
-        clearAuthToken();
-        if (unauthorizedHandler) {
-          unauthorizedHandler({
-            status: 401,
-            message: errorMessage,
-            url: response.url,
+        const normalizedMethod = (method || 'GET').toUpperCase();
+        const isGet = normalizedMethod === 'GET';
+        const isAuthMe = typeof path === 'string' && (path === '/auth/me' || path.endsWith('/auth/me'));
+
+        // Clear invalid token from memory and sessionStorage
+        inMemoryToken = null;
+        writeTokenToSessionStorage(null);
+
+        // Only GET requests (excluding identity verification /auth/me) may be queued for retry at most once
+        if (isGet && !isRetry && path && !skipReauthQueue && !isAuthMe) {
+          const retryPromise = new Promise((resolve, reject) => {
+            queuedRequests.push({
+              path,
+              options: { ...requestOptions, method: 'GET', isRetry: true },
+              resolve,
+              reject,
+            });
           });
+
+          // Trigger unauthorized handler once per re-auth cycle AFTER queuing this request
+          if (!isReauthPending) {
+            isReauthPending = true;
+            if (unauthorizedHandler) {
+              try {
+                unauthorizedHandler({
+                  status: 401,
+                  message: errorMessage,
+                  errorCode,
+                  url: response.url,
+                });
+              } catch (e) {
+                // Ignore handler error
+              }
+            }
+          }
+
+          return retryPromise;
         }
+
+        // Trigger unauthorized handler once if mutation or non-retryable
+        if (!isReauthPending) {
+          isReauthPending = true;
+          if (unauthorizedHandler) {
+            try {
+              unauthorizedHandler({
+                status: 401,
+                message: errorMessage,
+                errorCode,
+                url: response.url,
+              });
+            } catch (e) {
+              // Ignore handler error
+            }
+          }
+        }
+
+        // Mutations, identity verification, or repeated failures reject immediately
+        const authErr = new Error(
+          isGet
+            ? (errorData?.message || 'Session verification failed.')
+            : 'Session expired during action. Please re-authenticate and retry.'
+        );
+        authErr.status = 401;
+        authErr.isUnauthorized = true;
+        authErr.isMutation = !isGet;
+        authErr.sessionExpired = true;
+        authErr.errorCode = errorCode;
+        authErr.data = errorData;
+        throw authErr;
       }
     } else if (response.status === 403) {
       error.isForbidden = true;
@@ -225,13 +357,46 @@ export async function handleResponse(response, { skipAuth = false, suppressForbi
  */
 export async function apiRequest(path, options = {}) {
   const {
-    method,
+    method = 'GET',
     headers = {},
     body,
     cache,
     skipAuth = false,
     suppressForbiddenHandler = false,
+    skipReauthQueue = false,
+    isRetry = false,
   } = options;
+
+  const normalizedMethod = (method || 'GET').toUpperCase();
+  const isGet = normalizedMethod === 'GET';
+  const isAuthMe = typeof path === 'string' && (path === '/auth/me' || path.endsWith('/auth/me'));
+
+  // If a re-authentication cycle is currently in progress:
+  if (!skipAuth && isReauthPending && !skipReauthQueue && !isAuthMe) {
+    if (isGet && !isRetry) {
+      // Queue GET requests to replay once re-authentication succeeds
+      return new Promise((resolve, reject) => {
+        queuedRequests.push({
+          path,
+          options: { ...options, isRetry: true },
+          resolve,
+          reject,
+        });
+      });
+    }
+
+    // Mutations reject immediately to prevent duplicate or ambiguous execution
+    const pendingErr = new Error(
+      isGet
+        ? 'Session verification in progress.'
+        : 'Session re-authentication in progress. Please complete re-authentication before retrying.'
+    );
+    pendingErr.status = 401;
+    pendingErr.isUnauthorized = true;
+    pendingErr.isMutation = !isGet;
+    pendingErr.sessionExpired = true;
+    throw pendingErr;
+  }
 
   const url = resolveApiUrl(path);
   const requestHeaders = { ...headers };
@@ -283,6 +448,14 @@ export async function apiRequest(path, options = {}) {
     throw wrapped;
   }
 
-  return handleResponse(response, { skipAuth, suppressForbiddenHandler });
+  return handleResponse(response, {
+    skipAuth,
+    suppressForbiddenHandler,
+    skipReauthQueue,
+    path,
+    method: normalizedMethod,
+    isRetry,
+    requestOptions: options,
+  });
 }
 

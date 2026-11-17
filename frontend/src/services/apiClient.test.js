@@ -6,6 +6,9 @@ import {
   buildQueryString,
   clearAuthToken,
   getAuthToken,
+  isReauthInProgress,
+  notifyReauthFailure,
+  notifyReauthSuccess,
   resolveApiUrl,
   setAuthToken,
   setForbiddenHandler,
@@ -134,8 +137,9 @@ test('401 on protected endpoint clears token and fires unauthorizedHandler, whil
   let unauthorizedCount = 0;
 
   setAuthToken('existing-token');
-  setUnauthorizedHandler(() => {
+  setUnauthorizedHandler((info) => {
     unauthorizedCount += 1;
+    notifyReauthFailure(new Error(info?.message || 'Token expired'));
   });
 
   globalThis.fetch = async (url) => {
@@ -198,6 +202,163 @@ test('403 Forbidden preserves token and invokes forbiddenHandler, and network er
     );
   } finally {
     setForbiddenHandler(null);
+    clearAuthToken();
+    globalThis.fetch = prevFetch;
+    storage.restore();
+  }
+});
+
+test('Session Re-Authentication: Concurrency lock ensures single unauthorizedHandler call across concurrent 401s', async () => {
+  const storage = setupStorageStub();
+  const prevFetch = globalThis.fetch;
+  let handlerCallCount = 0;
+  let lastInfo = null;
+
+  setAuthToken('expired-sample-token');
+  setUnauthorizedHandler((info) => {
+    handlerCallCount += 1;
+    lastInfo = info;
+  });
+
+  globalThis.fetch = async (url) => {
+    return jsonResponse(
+      { message: 'Authentication token has expired', errorCode: 'TOKEN_EXPIRED' },
+      401,
+      url
+    );
+  };
+
+  try {
+    // Fire 3 concurrent GET requests
+    const p1 = apiRequest('/products');
+    const p2 = apiRequest('/recipes');
+    const p3 = apiRequest('/orders');
+
+    // Wait a tick for fetch calls to return 401 and queue
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Concurrency lock: handler called exactly once
+    assert.equal(handlerCallCount, 1);
+    assert.equal(lastInfo?.errorCode, 'TOKEN_EXPIRED');
+    assert.equal(isReauthInProgress(), true);
+
+    // Resolving reauth failure releases all 3 with 401 rejection
+    notifyReauthFailure(new Error('Session re-authentication cancelled'));
+
+    await assert.rejects(() => p1, /Session re-authentication cancelled/);
+    await assert.rejects(() => p2, /Session re-authentication cancelled/);
+    await assert.rejects(() => p3, /Session re-authentication cancelled/);
+    assert.equal(isReauthInProgress(), false);
+  } finally {
+    setUnauthorizedHandler(null);
+    clearAuthToken();
+    globalThis.fetch = prevFetch;
+    storage.restore();
+  }
+});
+
+test('Session Re-Authentication: GET requests are queued and retried at most once on notifyReauthSuccess', async () => {
+  const storage = setupStorageStub();
+  const prevFetch = globalThis.fetch;
+  let authAttempts = 0;
+
+  setAuthToken('initial-token');
+  setUnauthorizedHandler(() => {
+    // Simulates re-auth dialog opening
+  });
+
+  globalThis.fetch = async (url, options) => {
+    const authHeader = options?.headers?.Authorization;
+    if (authHeader === 'Bearer initial-token') {
+      authAttempts += 1;
+      return jsonResponse(
+        { message: 'Authentication token has expired', errorCode: 'TOKEN_EXPIRED' },
+        401,
+        url
+      );
+    }
+    if (authHeader === 'Bearer refreshed-token') {
+      return jsonResponse([{ id: 1, name: 'Paracetamol' }], 200, url);
+    }
+    return jsonResponse({ message: 'Unauthorized' }, 401, url);
+  };
+
+  try {
+    const requestPromise = apiRequest('/products');
+    // Wait a tick for initial 401 fetch to complete and enqueue
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(isReauthInProgress(), true);
+
+    // Notify success with new token
+    notifyReauthSuccess('refreshed-token');
+
+    const result = await requestPromise;
+    assert.deepEqual(result, [{ id: 1, name: 'Paracetamol' }]);
+    assert.equal(getAuthToken(), 'refreshed-token');
+    assert.equal(isReauthInProgress(), false);
+  } finally {
+    setUnauthorizedHandler(null);
+    clearAuthToken();
+    globalThis.fetch = prevFetch;
+    storage.restore();
+  }
+});
+
+test('Session Re-Authentication: Non-GET mutations immediately reject and are NEVER queued for auto-replay', async () => {
+  const storage = setupStorageStub();
+  const prevFetch = globalThis.fetch;
+  let handlerCalled = false;
+
+  setAuthToken('sample-token');
+  setUnauthorizedHandler(() => {
+    handlerCalled = true;
+  });
+
+  globalThis.fetch = async (url) => {
+    return jsonResponse(
+      { message: 'Authentication token has expired', errorCode: 'TOKEN_EXPIRED' },
+      401,
+      url
+    );
+  };
+
+  try {
+    // POST request fails with 401
+    await assert.rejects(
+      () =>
+        apiRequest('/orders', {
+          method: 'POST',
+          body: { orderNumber: 'MO-2026-9999' },
+        }),
+      (err) => {
+        assert.equal(err.status, 401);
+        assert.equal(err.isUnauthorized, true);
+        assert.equal(err.isMutation, true);
+        assert.equal(err.sessionExpired, true);
+        assert.match(err.message, /Session expired during action/);
+        return true;
+      }
+    );
+
+    assert.equal(handlerCalled, true);
+    assert.equal(isReauthInProgress(), true);
+
+    // While re-auth is in progress, any subsequent mutation is immediately blocked without network fetch
+    await assert.rejects(
+      () =>
+        apiRequest('/orders/1', {
+          method: 'DELETE',
+        }),
+      (err) => {
+        assert.equal(err.status, 401);
+        assert.equal(err.isMutation, true);
+        assert.equal(err.sessionExpired, true);
+        assert.match(err.message, /Session re-authentication in progress/);
+        return true;
+      }
+    );
+  } finally {
+    setUnauthorizedHandler(null);
     clearAuthToken();
     globalThis.fetch = prevFetch;
     storage.restore();

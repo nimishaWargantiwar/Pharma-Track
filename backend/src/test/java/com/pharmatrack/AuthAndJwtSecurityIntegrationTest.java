@@ -391,5 +391,70 @@ class AuthAndJwtSecurityIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer tampered.jwt.token"))
                 .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    @DisplayName("6. Returns stable, non-sensitive error codes in ErrorResponse (TOKEN_EXPIRED, TOKEN_INVALID, TOKEN_REVOKED, ACCOUNT_DISABLED, AUTHENTICATION_REQUIRED)")
+    void jwtErrorCodeClassificationEnforced() throws Exception {
+        String rawPassword = ephemeralStrongPassword();
+        UserAccount user = createPersistedUser("errorcode", rawPassword, Role.OPERATOR, true);
+        String validToken = loginAndExtractToken(user.getUsername(), rawPassword);
+
+        // AUTHENTICATION_REQUIRED: No token
+        mockMvc.perform(get("/api/auth/me"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errorCode").value("AUTHENTICATION_REQUIRED"));
+
+        // AUTHENTICATION_REQUIRED: Empty Bearer token
+        mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer "))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errorCode").value("AUTHENTICATION_REQUIRED"));
+
+        // TOKEN_INVALID: Malformed / tampered token
+        mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken + "tamper"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errorCode").value("TOKEN_INVALID"));
+
+        // TOKEN_EXPIRED: Expired token
+        SecretKey key = Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8));
+        Instant past = Instant.now().minusSeconds(120);
+        String expiredToken = Jwts.builder()
+                .subject(user.getUsername())
+                .claim(JwtService.CLAIM_USER_ID, user.getId())
+                .claim(JwtService.CLAIM_ROLE, user.getRole().name())
+                .claim(JwtService.CLAIM_FULL_NAME, user.getFullName())
+                .claim(JwtService.CLAIM_TOKEN_VERSION, user.getTokenVersion())
+                .issuedAt(Date.from(past.minusSeconds(60)))
+                .expiration(Date.from(past))
+                .signWith(key, Jwts.SIG.HS256)
+                .compact();
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + expiredToken))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errorCode").value("TOKEN_EXPIRED"));
+
+        // TOKEN_REVOKED: tokenVersion incremented
+        user.incrementTokenVersion();
+        userAccountRepository.saveAndFlush(user);
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + validToken))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errorCode").value("TOKEN_REVOKED"));
+
+        // ACCOUNT_DISABLED: user disabled
+        String activePassword = ephemeralStrongPassword();
+        UserAccount disabledUser = createPersistedUser("willdisable", activePassword, Role.OPERATOR, true);
+        String disabledUserToken = loginAndExtractToken(disabledUser.getUsername(), activePassword);
+        disabledUser.setEnabled(false);
+        userAccountRepository.saveAndFlush(disabledUser);
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + disabledUserToken))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errorCode").value("ACCOUNT_DISABLED"));
+    }
 }
 

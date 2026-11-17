@@ -1,6 +1,7 @@
 package com.pharmatrack.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import com.pharmatrack.security.JwtAuthenticationException;
 import org.springframework.security.authentication.AccountExpiredException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.CredentialsExpiredException;
@@ -40,6 +41,7 @@ public final class SensitiveDataSanitizer {
     private static final Pattern SAFE_HTTP_METHOD = Pattern.compile("^[A-Z]{1," + MAX_METHOD_LENGTH + "}$");
 
     private static final Set<Class<? extends AuthenticationException>> SAFE_CLIENT_AUTH_EXCEPTIONS = Set.of(
+            JwtAuthenticationException.class,
             BadCredentialsException.class,
             DisabledException.class,
             InsufficientAuthenticationException.class,

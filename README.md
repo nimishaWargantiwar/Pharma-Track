@@ -8,7 +8,7 @@
 [![TiDB Cloud](https://img.shields.io/badge/Database-TiDB%20Cloud%20v8.5.3-E30613?logo=pingcap&logoColor=white)](https://tidbcloud.com/)
 [![Flyway](https://img.shields.io/badge/Schema%20Migrations-Flyway%2010.10-CC0202?logo=flyway&logoColor=white)](https://flywaydb.org/)
 [![Docker](https://img.shields.io/badge/Container-Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
-[![Automated Tests](https://img.shields.io/badge/Automated%20Tests-808%20Passed%20%28684%20Backend%20%7C%20124%20Frontend%29-brightgreen)](https://github.com/nimishaWargantiwar/Pharma-Track)
+[![Automated Tests](https://img.shields.io/badge/Automated%20Tests-1%2C584%20Passed%20%281%2C300%20Backend%20%7C%20284%20Frontend%29-brightgreen)](https://github.com/nimishaWargantiwar/Pharma-Track)
 
 > **Educational & Engineering Portfolio Showcase:** A full-stack web application demonstrating core concepts of a pharmaceutical Manufacturing Execution System (MES) and Electronic Batch Record (eBR). Features role-based sequential batch execution, multi-parameter quality release gates, a 5-stage deviation and CAPA lifecycle, raw material lot tracking, and QR-based batch dossier lookups.
 
@@ -21,15 +21,16 @@
 | **Production Web Application** | Cloudflare Pages | [pharma-track.pages.dev](https://pharma-track.pages.dev) | Static SPA Delivery (`HTTP 200 OK`) |
 | **Production REST API Engine** | Render Web Service (Docker) | [pharmatrack-backend-92pf.onrender.com](https://pharmatrack-backend-92pf.onrender.com) | Spring Boot Application Engine |
 | **Database Connectivity Probe** | Render Public API | [/api/health](https://pharmatrack-backend-92pf.onrender.com/api/health) | Dynamic Database Check (`HTTP 200 OK`) |
-| **Distributed Relational Database** | TiDB Cloud Starter (AWS Tokyo) | `gateway01.ap-northeast-1.prod.aws.tidbcloud.com` | 18 Relational Application Tables + Flyway History |
+| **Distributed Relational Database** | TiDB Cloud Starter (AWS Tokyo) | `gateway01.ap-northeast-1.prod.aws.tidbcloud.com` | Production: 18 Relational Application Tables (Flyway V1–V3) / Local: 22 Tables (V1–V7) |
 | **Source Code Repository** | GitHub | [github.com/nimishaWargantiwar/Pharma-Track](https://github.com/nimishaWargantiwar/Pharma-Track) | Full-Stack Monorepo |
 
 > [!NOTE]
-> **Deployment Architecture & Free-Tier Operational Behavior:**
+> **Deployment Architecture & Operational Behavior:**
 > - **Frontend Delivery:** Cloudflare Pages hosts the compiled React 18 SPA (`dist/`) over global edge CDN with zero cold-start delay.
 > - **Backend Availability:** Render Free Web Service hosts the containerized Spring Boot 3.3.5 JAR. Free instances spin down after 15 minutes of inactivity. When asleep, initial HTTP requests may experience a 30–50 second cold-start delay while the container boots.
 > - **Session Cold-Start Resilience:** `AuthContext.jsx` includes a built-in retry mechanism that preserves the operator's JWT in `sessionStorage` during backend wakeups without prematurely invalidating authentication.
-> - **Health Verification vs. Feature Verification:** An `HTTP 200 OK` response from `GET /api/health` verifies that the Spring application context has initialized and that HikariCP has successfully validated database connectivity against TiDB Cloud (`SELECT 1`). End-to-end operational features (step transitions, electronic batch records, QA gates) are defended separately by 808 automated tests.
+> - **Health Verification vs. Feature Verification:** An `HTTP 200 OK` response from `GET /api/health` verifies that the Spring application context has initialized and that HikariCP has successfully validated database connectivity against TiDB Cloud (`SELECT 1`). End-to-end operational features (step transitions, electronic batch records, QA gates, AI Copilot, AI Batch Analysis) are defended separately by 1,584 automated tests.
+> - **AI Integration & Schema Deployment Status:** In the live production deployment on Render and TiDB Cloud, AI features are disabled by default (`APP_AI_ENABLED=false`), and production TiDB operates on Flyway migrations V1–V3 (18 application tables). The newly developed AI Copilot, AI Batch Analysis reports, and Flyway migrations V4–V7 (introducing 4 additional tables) are currently local development features that have not been pushed or deployed to production.
 
 ---
 
@@ -38,6 +39,8 @@
 > **PharmaTrack MES & eBR** is an educational engineering showcase and portfolio project modeled after pharmaceutical manufacturing execution (MES), electronic batch record (eBR), quality control, QA disposition, and deviation/CAPA workflows.
 >
 > **It is NOT certified, validated, or approved for real GxP / cGMP manufacturing, GAMP 5 computer system validation, or FDA 21 CFR Part 11 / EU Annex 11 commercial production use.** Do not deploy or rely on this software for clinical, commercial, or regulated drug manufacturing operations without independent regulatory qualification, validated infrastructure, hardware/infrastructure clock controls, cryptographic PKI/re-authentication electronic signature controls, and formal IQ/OQ/PQ validation documentation.
+>
+> **AI Advisory & Non-Execution Disclaimer:** The AI Copilot and AI Batch Analysis capabilities are strictly read-only, informational, and advisory engineering demonstrations. AI outputs cannot approve, reject, or release batches, cannot execute eBR steps, and cannot override or satisfy formal quality gates or GxP release criteria. AI Batch Analysis derives manufacturing KPIs and record completeness evaluations from authoritative server records, but all regulatory disposition decisions remain exclusively reserved for human operators and QA reviewers.
 
 ---
 
@@ -59,6 +62,8 @@
    - [4.10 Raw Material Inventory & Warehouse Management](#410-raw-material-inventory--warehouse-management)
    - [4.11 QR Batch Traceability & Digital Dossier](#411-qr-batch-traceability--digital-dossier)
    - [4.12 User Administration & Role Governance](#412-user-administration--role-governance)
+   - [4.13 AI Copilot & Grounded Operational Assistant](#413-ai-copilot--grounded-operational-assistant)
+   - [4.14 AI Batch Analysis & Traceability Reports](#414-ai-batch-analysis--traceability-reports)
 5. [Role-Based Access Control (RBAC) Matrix](#5-role-based-access-control-rbac-matrix)
 6. [System Architecture & Infrastructure](#6-system-architecture--infrastructure)
 7. [Frontend Architecture & Implementation](#7-frontend-architecture--implementation)
@@ -69,6 +74,8 @@
     - [11.1 End-to-End Manufacturing Lifecycle](#111-end-to-end-manufacturing-lifecycle)
     - [11.2 Raw Material Inventory & Issue Lifecycle](#112-raw-material-inventory--issue-lifecycle)
     - [11.3 Quality Testing, Deviation & CAPA Lifecycle](#113-quality-testing-deviation--capa-lifecycle)
+    - [11.4 Grounded AI Copilot Inquiry Lifecycle](#114-grounded-ai-copilot-inquiry-lifecycle)
+    - [11.5 AI Batch Analysis Report Generation & Archival Lifecycle](#115-ai-batch-analysis-report-generation--archival-lifecycle)
 12. [Security Architecture & Implementation](#12-security-architecture--implementation)
 13. [Validation & Error Handling Strategy](#13-validation--error-handling-strategy)
 14. [Testing Strategy & Quality Assurance](#14-testing-strategy--quality-assurance)
@@ -114,8 +121,8 @@ PharmaTrack was designed around six core full-stack software engineering princip
 2. **Server-Derived Attribution & Sanitized Error Responses:** Identity is extracted directly from verified JWT claims (`AuthenticatedActorResolver`), and timestamps are assigned by the server (`AppTime`). `GlobalExceptionHandler` formats errors to prevent database connection strings or stack traces from leaking to clients.
 3. **Fail-Closed Production Configuration:** In the `prod` profile, `ProductionConfigurationGuardInitializer` prevents application startup if required settings (minimum 256-bit `JWT_SECRET`, non-wildcard `CORS_ALLOWED_ORIGINS`, database credentials, or TLS configuration) are missing or set to local defaults.
 4. **Role Separation (RBAC):** System administrators manage users and products but cannot execute steps or log deviations; operators execute batch steps; QC analysts record analytical checks; QA reviewers control batch release and deviation closure.
-5. **Relational Schema Migrations:** All 18 application tables are managed using Flyway migrations (`V1`, `V2`, `V3`), preserving foreign keys, check constraints, and unique indexes across releases.
-6. **Automated Test Coverage:** 808 automated tests (684 backend across 57 test suites + 124 frontend unit/integration tests) verify controller endpoints, service logic, authorization guards, and state transitions.
+5. **Relational Schema Migrations:** Application schema is managed using additive Flyway migrations (18 tables in production Flyway `V1`–`V3`; 22 tables in local development `V1`–`V7`), preserving foreign keys, check constraints, and unique indexes across releases.
+6. **Automated Test Coverage:** 1,584 automated tests (1,300 backend across 86 test suites + 284 frontend unit/integration tests) verify controller endpoints, service logic, authorization guards, state transitions, AI grounding, and deterministic report generation.
 
 ---
 
@@ -130,6 +137,8 @@ PharmaTrack was designed around six core full-stack software engineering princip
 | **Lot-Level Inventory** | Multi-facility warehouse zoning, raw material receipt, expiry tracking, and order BOM issuing. | Append-only `stock_movements` ledger with quantity before/after balances. |
 | **QR Batch Traceability** | Dynamic generation of deterministic batch QR identifiers and instant digital dossier retrieval. | Hardware-independent browser `BarcodeDetector` scanning with camera fallback. |
 | **Centralized Audit Trail** | Application-level logging of administrative, operational, and quality mutations. | Append-only `audit_logs` table capturing entity type, action, actor username, and before/after JSON states. |
+| **AI Copilot Assistant** | Grounded, read-only conversational assistant for orders and batches with verified MES citations. | Multi-turn threads, idempotency token leasing, context grounding blocks (`<<<VERIFIED_PHARMATRACK_DATA>>>`), advisory disclaimer. General/order queries open to all roles; batch queries restricted to `PRODUCTION_SUPERVISOR`. |
+| **AI Batch Analysis Reports** | Dedicated full and focused batch investigation reports with deterministic KPIs and 9 focus areas. | 12 structured report sections, deterministic KPIs (planned size, yield, counts), focus area isolation, soft-archiving with mandatory archive reason (max 500 characters), ADMIN-only local permanent deletion guarded by loopback checks, audit logging. |
 
 ---
 
@@ -391,6 +400,64 @@ Dedicated administration module for managing platform users, roles, account acti
 
 ---
 
+### 4.13 AI Copilot & Grounded Operational Assistant
+
+Introduced in Flyway Migration `V4`, this module provides an authenticated, read-only conversational assistant embedded across the MES workspace, answering operator and supervisor inquiries grounded strictly in authoritative database records.
+
+- **Module Purpose:** Provide an authenticated, conversational assistant capable of answering queries regarding manufacturing orders, master recipes, batch execution status, material inventory, and quality incidents, grounded strictly in live MES data.
+- **Industry Concept:** In pharmaceutical operations, shop-floor operators and supervisors frequently need instant contextual clarity on order BOM allocations, execution progress, or deviation history without context-switching away from active execution screens. The Copilot functions as an advisory conversational bridge grounded in real-time server records.
+- **Features & Operations:**
+  - Multi-turn conversation management: Create new threads, list historical threads, switch between threads, rename thread titles, and delete owned threads.
+  - Contextual thread binding: Global general inquiries, or auto-binding to active `MANUFACTURING_ORDER` or `BATCH` contexts with visual context badge chips.
+  - Verified MES grounding: Dynamic context builders compile authoritative database records into strict `<<<VERIFIED_PHARMATRACK_DATA>>>` blocks; system instructions enforce that only verified facts may be cited.
+  - Interactive source citations: Assistant responses emit verified `AiSourceReferenceDto` citations (`ORDER`, `BATCH`, `DEVIATION`, `QUALITY_CHECK`, `MATERIAL_LOT`, `AUDIT_LOG`) rendered as interactive pills that deep-link to the target module and auto-close the drawer.
+  - Advisory disclaimer banner: Prominently reinforces that AI outputs are advisory and cannot execute shop-floor actions or formal quality decisions.
+- **Inputs & Outputs:** Inputs: User inquiry text, unique client request ID (`clientRequestId`), optional context (`contextType`, `contextIdentifier`), conversation title. Outputs: Assistant response text, LLM model identifier, structured source references (`AiSourceReferenceDto`), and thread metadata.
+- **Business Rules & Validations:**
+  - Strictly advisory: AI output is read-only and cannot execute manufacturing actions, modify records, or make QA disposition decisions.
+  - Thread ownership isolation: Users can only view, rename, submit to, or delete their own conversation threads; attempting to access another user's thread returns `404 Not Found` to prevent information disclosure.
+  - Idempotent request lifecycle: Submissions enforce a unique `clientRequestId` and request hash with leasing tokens (`PENDING` ➔ `COMPLETED` / `FAILED`); rapid repeated submissions return the existing response.
+  - Fail-safe leasing: `AiConversationRecoveryScheduler` automatically recovers timed-out requests if an upstream provider stalls.
+- **Role Permissions:** All five authenticated roles (`ADMIN`, `PRODUCTION_SUPERVISOR`, `OPERATOR`, `QC_ANALYST`, `QA_REVIEWER`) have conversational access for general and manufacturing order inquiries; inquiries referencing batch analysis are strictly restricted to `PRODUCTION_SUPERVISOR`.
+- **Frontend Implementation:** `AiCopilotDrawer.jsx` (slide-over drawer with thread list, chat transcript, context pill, and suggested questions), `AiSourceReferencePill.jsx` (accessible citation chips deep-linking to modules), `FormattedMessage.jsx` (safe Markdown parser without `innerHTML`), and `aiApi.js`.
+- **Backend Implementation:** `AiCopilotController.java` (`POST /api/ai/query`), `AiConversationController.java` (`/api/ai/conversations`), `AiCopilotService.java`, `AiConversationService.java`, `OrderContextBuilder.java`, `BatchContextBuilder.java`, `AiConversationTxHelper.java`, `AiConversationRecoveryScheduler.java`, and `OpenAiLlmClient.java` (using Spring `RestClient` with configurable connect and read timeouts against OpenAI-compatible endpoints).
+- **Database Relationships:** Flyway Migration `V4` introduces `copilot_conversations` (linked to `user_accounts`), `copilot_requests` (linked to `copilot_conversations`), and `copilot_messages` (linked to `copilot_requests`).
+
+---
+
+### 4.14 AI Batch Analysis & Traceability Reports
+
+Introduced in Flyway Migrations `V5`, `V6`, and `V7`, this module generates comprehensive, structured batch investigation reports inside Batch Traceability, combining deterministic Java manufacturing KPIs with LLM-synthesized narrative evaluations.
+
+- **Module Purpose:** Generate structured analytical investigation reports on finished, in-progress, or planned batches, combining authoritative server-calculated manufacturing KPIs (planned size, yield %, yield variance, execution step count, QC count, deviation count) with LLM-synthesized evaluations across 12 structured sections or 9 targeted focus areas.
+- **Industry Concept:** Batch release reviews, product quality reviews, and deviation investigations require assembling disparate data silos (dispensing, eBR steps, analytical QC tests, deviations, CAPA actions, and chronological audit entries) into a coherent technical narrative.
+- **Features & Operations:**
+  - **FULL Analysis Mode:** Generates all 12 standardized canonical sections covering the complete batch lifecycle.
+  - **FOCUSED Analysis Mode:** Allows supervisors to select 1 to 9 specific focus areas across 4 categories (`MANUFACTURING_YIELD`, `MATERIAL_TRACEABILITY`, `EBR_EXECUTION`, `QC_INSPECTION`, `QA_DISPOSITION`, `DEVIATIONS_CAPA`, `CHRONOLOGICAL_AUDIT`, `MISSING_RECORDS`, `RISK_ASSESSMENT`), isolating structured findings and linked recommendations while setting unselected sections strictly to null.
+  - **Deterministic Manufacturing KPIs:** Planned batch size, actual yield, yield percentage, yield variance, execution step count, QC check count, and deviation count are computed deterministically in Java and cannot be altered or approximated by the LLM. For planned batches awaiting production, yield metrics are identified as not yet expected rather than zero.
+  - **Three Visual Perspectives:** Interactive Structured Analysis cards (with status badges, verified findings, and linked recommendations), Complete Narrative Markdown view, and Evidence & Citations deep-link list. Includes active versus archived report filtering and historical report browsing.
+  - **Soft-Archival Governance:** Reports can be soft-archived with a mandatory archive reason (up to 500 characters) to declutter operational views; archived reports remain retrievable via `includeArchived=true`. Archival is one-way (unarchive and restore functionality is not implemented).
+  - **Local-Only Permanent Deletion:** In local development and automated testing environments only, administrators can permanently delete a report. Defended by `LocalEnvironmentDeletionGuard`, this operation is strictly blocked in production and on non-loopback databases. It requires the caller to hold the `ADMIN` role, enter an exact confirmation keyword (`PERMANENTLY DELETE`), and provide a mandatory non-blank audit reason (up to 500 characters). The physical deletion and a durable `PERMANENT_DELETE` audit snapshot (capturing report metadata, payload snapshot, and deleting administrator identity) execute within an atomic transaction with full rollback defense.
+  - **Idempotency & Fail-Closed Generation:** Governed by unique client request IDs; token budget defaults to 4,096 tokens; provider truncation fails closed to prevent incomplete or corrupt reports.
+- **Inputs & Outputs:** Inputs: Target Batch ID/Number, Analysis Mode (`FULL` vs `FOCUSED`), selected focus areas list, client request ID (`clientRequestId`), mandatory archive reason (on archive), mandatory deletion confirmation keyword and reason (on permanent delete). Outputs: Persisted report ID, deterministic KPIs, 12 structured section texts, normalized Markdown report, structured area findings, linked recommendations, source references, and durable permanent deletion audit snapshots.
+- **Business Rules & Validations:**
+  - Generation access is strictly restricted to `PRODUCTION_SUPERVISOR`.
+  - Report viewing is permitted for `ADMIN`, `PRODUCTION_SUPERVISOR`, and `QA_REVIEWER`; `OPERATOR` and `QC_ANALYST` are strictly blocked.
+  - Permanent Deletion is strictly restricted to `ADMIN` in local/test environments; blocked for all other roles and in production.
+  - Advisory-Only Outputs: System instructions and Java post-processors strictly prohibit the model from approving, rejecting, or releasing a batch; Section 7 QA disposition is anchored to authoritative MES records and does not substitute for formal QA review decisions; Section 10 record completeness evaluation is derived deterministically; Section 9 chronological audit events are sorted chronologically ascending by timestamp and filtered to exclude AI metadata.
+  - Reports are immutable: historical reports cannot be edited or overwritten; archival preserves the record in the database with audit attribution; unarchive and restore are intentionally not supported.
+- **Role Permissions:**
+  - Report Generation: Exclusively `PRODUCTION_SUPERVISOR`.
+  - Report Viewing (History & Detail): `ADMIN`, `PRODUCTION_SUPERVISOR`, `QA_REVIEWER`.
+  - Report Archival: `ADMIN`, `PRODUCTION_SUPERVISOR`.
+  - Permanent Deletion: Exclusively `ADMIN` (restricted to local development/test environments; blocked in production).
+  - Excluded Roles: `OPERATOR` and `QC_ANALYST` have zero access.
+- **Frontend Implementation:** `BatchAnalysisWorkspace.jsx` (tabbed interface with Structured Analysis, Narrative Markdown, and Citations), `BatchAnalysisWorkspaceModal.jsx`, `BatchAnalysisGenerateModal.jsx` (mode and 9 focus area chip selectors), `PermanentDeleteModal.jsx` (admin confirmation modal), and `batchAnalysisApi.js`.
+- **Backend Implementation:** `BatchAnalysisReportController.java` (`/api/batches/{batchId}/analysis-reports`), `BatchAnalysisReportService.java`, `BatchLifecycleRecordClassifier.java`, `BatchContextBuilder.java`, `BatchAnalysisReportTxHelper.java`, `BatchAnalysisReportRepository.java`, `LocalEnvironmentDeletionGuard.java`, `PermanentDeleteReportRequestDto.java`, and `OpenAiLlmClient.java`.
+- **Database Relationships:** Flyway Migrations `V5`, `V6`, and `V7` introduce `batch_analysis_reports` table linked to `batches` (`batch_id`) and `user_accounts` (`generated_by_user_id`, `archived_by_user_id`) using `ON DELETE NO ACTION` to guarantee audit trail preservation. Permanent deletion audit logs are atomically recorded in `audit_logs` with action `PERMANENT_DELETE`.
+
+---
+
 ## 5. Role-Based Access Control (RBAC) Matrix
 
 PharmaTrack enforces strict least-privilege access control at both the React navigation/routing layer and Spring Security REST controller layer (`@PreAuthorize` / `SecurityConfig`):
@@ -412,6 +479,12 @@ PharmaTrack enforces strict least-privilege access control at both the React nav
 | **QR Batch Traceability (Scan & Dossier)** | ✅ Full | ✅ Full | ✅ Full | ✅ Full | ✅ Full |
 | **Audit Trail Logs (View Full History)** | ✅ Full (System Audit) | ❌ Blocked | ❌ Blocked | ❌ Blocked | ✅ Full (QA Oversight) |
 | **User Administration & Role Assignment** | ✅ Full | ❌ Blocked | ❌ Blocked | ❌ Blocked | ❌ Blocked |
+| **AI Copilot (General & Order Inquiries)** | ✅ Full | ✅ Full | ✅ Full | ✅ Full | ✅ Full |
+| **AI Copilot (Batch Inquiries & Context)** | ❌ Blocked | ✅ Full | ❌ Blocked | ❌ Blocked | ❌ Blocked |
+| **AI Batch Analysis (Generate Report)** | ❌ Blocked | ✅ Full (Generate Report) | ❌ Blocked | ❌ Blocked | ❌ Blocked |
+| **AI Batch Analysis (View History & Detail)** | ✅ Full | ✅ Full | ❌ Blocked | ❌ Blocked | ✅ Full (QA Oversight) |
+| **AI Batch Analysis (Archive Report)** | ✅ Full | ✅ Full | ❌ Blocked | ❌ Blocked | ❌ Blocked |
+| **AI Batch Analysis (Permanent Delete)** | ✅ Full (Local Dev Only) | ❌ Blocked | ❌ Blocked | ❌ Blocked | ❌ Blocked |
 
 ---
 
@@ -422,26 +495,34 @@ PharmaTrack uses a containerized, decoupled three-tier architecture deployed acr
 ```mermaid
 flowchart LR
     subgraph Client["Presentation Layer (Cloudflare Pages)"]
-        SPA["React 18 Single Page App<br/>Vite 5 + Tailwind CSS<br/>Session-Isolated JWT Storage<br/>Client-Side RBAC Guard"]
+        SPA["React 18 Single Page App<br/>Vite 5 + Tailwind CSS<br/>Session-Isolated JWT Storage<br/>Client-Side RBAC Guard<br/>Copilot Drawer & Batch Analysis Workspace"]
     end
 
     subgraph Backend["Application Layer (Render Docker Web Service)"]
         Security["Spring Security 6.3<br/>Stateless JWT Filter (HS256)<br/>Exact CORS Origin Validation"]
         Controllers["REST Controllers<br/>@PreAuthorize Method Guards"]
         Services["Business Services<br/>Release Gates & BOM Validation"]
+        AiEngine["AI Integration Subsystem<br/>Order/Batch Context Builders<br/>Idempotency & Lease Recovery<br/>OpenAiLlmClient (HTTP/TLS Timeouts)"]
         Auditor["AuthenticatedActorResolver<br/>Append-Only Audit Trail"]
     end
 
-    subgraph Database["Persistence Layer (TiDB Cloud Starter)"]
-        TiDB[("TiDB Cloud v8.5.3 (AWS Tokyo)<br/>Distributed MySQL 8.0 Protocol<br/>InnoDB Engine Semantics<br/>18 Relational Tables<br/>Flyway V1, V2, V3")]
+    subgraph External["External AI Provider (Optional)"]
+        LLM["OpenAI-Compatible REST API<br/>(e.g., Groq / openai/gpt-oss-20b)<br/>Spring RestClient (Timeouts: 3s / 60s)"]
+    end
+
+    subgraph Database["Persistence Layer (TiDB Cloud Starter / Local)"]
+        TiDB[("TiDB Cloud v8.5.3 (AWS Tokyo)<br/>Distributed MySQL 8.0 Protocol<br/>Production: Flyway V1–V3 (18 Tables)<br/>Local Dev: Flyway V1–V7 (22 Tables)")]
     end
 
     SPA -->|"HTTPS REST + JWT Bearer<br/>VITE_API_BASE_URL"| Security
     Security --> Controllers
     Controllers --> Services
     Services --> Auditor
+    Services --> AiEngine
+    AiEngine <-->|"HTTPS POST (Bearer Secret)<br/>Connect: 3s | Read: 60s"| LLM
     Services -->|"JDBC over TLS (sslMode=REQUIRED)<br/>HikariCP Pool (UTC Timezone)"| TiDB
     Auditor -->|"Audit Logs Persistence"| TiDB
+    AiEngine -->|"Conversations & Reports (Local Dev V4–V7)"| TiDB
 ```
 
 ---
@@ -471,6 +552,12 @@ frontend/
     │   ├── DeviationWorkspace.jsx
     │   ├── InventoryManagement.jsx
     │   ├── BatchTraceability.jsx
+    │   ├── BatchAnalysisWorkspace.jsx       # Dedicated AI Batch Analysis & Traceability Reports tab
+    │   ├── BatchAnalysisWorkspaceModal.jsx  # Full modal workspace with 3 report views & soft archival
+    │   ├── BatchAnalysisGenerateModal.jsx   # Report generation modal with FULL vs FOCUSED selection
+    │   ├── AiCopilotDrawer.jsx              # Slide-over grounded AI conversational assistant
+    │   ├── AiSourceReferencePill.jsx        # Clickable verified source pills linking to MES records
+    │   ├── FormattedMessage.jsx             # Clean markdown message renderer with code blocks
     │   └── UserManagement.jsx
     ├── context/
     │   └── AuthContext.jsx    # Session restoration, JWT storage, cold-start retry handling
@@ -485,10 +572,13 @@ frontend/
     │   ├── deviationApi.js
     │   ├── inventoryApi.js
     │   ├── batchTraceabilityApi.js
+    │   ├── batchAnalysisApi.js# AI Batch Analysis endpoints (generate, poll, list, detail, archive)
+    │   ├── aiApi.js           # AI Copilot endpoints (threads, messages, single-turn queries)
     │   └── adminUserApi.js
     └── utils/                 # Pure helper functions
         ├── apiUrlConfig.js    # Strict API URL validation (fails if localhost in prod bundle)
         ├── dateTimeUtils.js   # Asia/Kolkata (+05:30) date/time formatting helpers
+        ├── requestIdUtils.js  # Client request UUID generation for idempotent AI report leasing
         └── rbacUtils.js       # Tab navigation permissions and role predicate functions
 ```
 
@@ -500,11 +590,57 @@ frontend/
 ```text
 backend/src/main/java/com/pharmatrack/
 ├── PharmaTrackApplication.java           # Spring Boot entry point
+├── ai/                                   # AI Subsystem (Copilot Assistant & Batch Analysis)
+│   ├── client/                           # External LLM communication abstractions
+│   │   ├── LlmClient.java                # Interface: generateCompletion(prompt, systemInstruction)
+│   │   ├── OpenAiLlmClient.java          # OpenAI REST API client (Spring RestClient, Jackson streaming)
+│   │   ├── LlmResponse.java              # Structured LLM completion model (text, token usage)
+│   │   └── LlmClientException.java       # Typed client exception hierarchy (timeout, 4xx, 5xx)
+│   ├── config/                           # AI configuration & properties
+│   │   └── AiCopilotProperties.java      # Typed binding for app.ai.* (enabled, model, timeouts, tokens)
+│   ├── controller/                       # AI REST API controllers
+│   │   ├── AiCopilotController.java      # POST /api/ai/query (authenticated advisory queries)
+│   │   ├── AiConversationController.java # /api/ai/conversations (CRUD + message submissions)
+│   │   └── BatchAnalysisReportController.java # /api/batches/{id}/analysis-reports (reports lifecycle)
+│   ├── dto/                              # AI request/response data transfer objects
+│   │   ├── BatchAnalysisReportRequestDto.java # Mode, focusAreas, clientRequestId
+│   │   ├── BatchAnalysisReportResponseDto.java # Complete report payload with 12 structured sections
+│   │   ├── BatchAnalysisReportSummaryDto.java  # Summary DTO for paginated report history lists
+│   │   ├── BatchAnalysisSectionsDto.java      # Structured 12-section domain container
+│   │   ├── BatchAnalysisMetricsDto.java       # Deterministic manufacturing metrics (yield, counts)
+│   │   ├── BatchAnalysisAreaFindingDto.java   # Focus area findings and narrative summaries
+│   │   ├── RecordAssessmentDto.java           # Classified lifecycle record assessment
+│   │   ├── LinkedRecommendationDto.java       # Evidence-linked operational recommendation
+│   │   └── ArchiveReportRequestDto.java       # Mandatory archive reason payload (max 500 characters)
+│   ├── entity/                           # AI domain entities and lifecycle enums
+│   │   ├── BatchAnalysisReport.java      # JPA entity for batch_analysis_reports table
+│   │   ├── BatchAnalysisReportStatus.java# COMPLETED, FAILED
+│   │   ├── BatchAnalysisMode.java        # FULL, FOCUSED
+│   │   ├── BatchAnalysisFocusArea.java   # 9 specialized focus area enumerations
+│   │   ├── RecordLifecycleClassification.java # AUTHORITATIVE, MISSING_OR_INCOMPLETE, etc.
+│   │   └── LifecycleRecordType.java      # MATERIAL, EBR_STEP, QC_CHECK, DEVIATION, AUDIT_LOG
+│   ├── exception/                        # AI-specific domain exceptions
+│   │   ├── BatchAnalysisConflictException.java   # 409 Conflict (e.g. concurrent report generation)
+│   │   └── BatchAnalysisValidationException.java # 400 Bad Request (invalid focus area / mode)
+│   ├── repository/                       # AI persistence layer
+│   │   └── BatchAnalysisReportRepository.java    # Spring Data JPA repository with @EntityGraph
+│   └── service/                          # AI business logic, context builders & validators
+│       ├── AiCopilotService.java         # Prompt construction with <<<VERIFIED_PHARMATRACK_DATA>>>
+│       ├── AiConversationService.java    # Thread management, user isolation, message leasing
+│       ├── AiConversationTxHelper.java   # Separate transaction boundaries for atomic message leasing
+│       ├── AiConversationRecoveryScheduler.java # Scheduled job to recover stale IN_PROGRESS leases
+│       ├── BatchAnalysisReportService.java   # Report generation, single-LLM synthesis, deterministic KPIs & normalization
+│       ├── BatchAnalysisReportTxHelper.java  # Isolated transaction helper for report leasing & storage
+│       ├── BatchContext.java             # Immutable manufacturing context snapshot
+│       ├── BatchContextBuilder.java      # MES aggregator (batch, recipe, eBR, QC, deviations, inventory)
+│       ├── BatchLifecycleRecordClassifier.java # Rigorous classifier of lifecycle records against policy
+│       ├── OrderContext.java             # Order-level contextual snapshot
+│       └── OrderContextBuilder.java      # Order aggregator for order-scoped copilot inquiries
 ├── config/                               # Startup security guards and bootstrap initializers
 │   ├── ProductionConfigurationGuardInitializer.java
 │   ├── ProductionEnvironmentPostProcessor.java
 │   └── SecurityBootstrapInitializer.java
-├── controller/                           # REST API Endpoints
+├── controller/                           # Core MES REST API Endpoints
 │   ├── AuthController.java               # /api/auth
 │   ├── HealthController.java             # /api/health
 │   ├── ProductController.java            # /api/products
@@ -527,8 +663,8 @@ backend/src/main/java/com/pharmatrack/
 │   ├── InventoryService.java
 │   ├── BatchTraceabilityService.java
 │   └── AdminUserService.java
-├── repository/                           # 17 Spring Data JPA repository interfaces
-├── entity/                               # 18 JPA domain entities
+├── repository/                           # 21 Spring Data JPA repository interfaces
+├── entity/                               # 22 JPA domain entities (22 application tables)
 ├── dto/                                  # Validated request and sanitized response DTOs
 ├── exception/                            # Global exception handling and error sanitization
 │   ├── GlobalExceptionHandler.java
@@ -574,29 +710,42 @@ Sanitized JSON Response (ErrorResponse or Domain DTO)
 
 ## 9. Database Design & Flyway Evolution
 
-PharmaTrack's relational schema is version-controlled via Flyway across 3 purely additive migrations, comprising **18 core application tables** and `flyway_schema_history`:
+PharmaTrack's relational schema is version-controlled via Flyway. In the live production TiDB Cloud deployment, the database operates on Flyway `V1`–`V3` (**18 core application tables** + `flyway_schema_history`). In local development, the schema is extended via additive migrations `V4`–`V7` (**22 core application tables**), introducing dedicated tables for AI Copilot thread persistence and AI Batch Analysis reports. Migrations V4–V7 are local and have not been pushed or deployed to production:
 
 ```text
-┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                       FLYWAY SCHEMA EVOLUTION                                         │
-├───────────────────────────────────┬───────────────────────────────────┬────────────────────────────────┤
-│ Flyway V1: Initial Core Schema    │ Flyway V2: Inventory & Warehouse  │ Flyway V3: QR Traceability     │
-│ (13 Tables)                       │ (5 Tables)                        │ (Schema Expansion)             │
-├───────────────────────────────────┼───────────────────────────────────┼────────────────────────────────┤
-│ 1. users                          │ 14. raw_materials                 │ • Added `qr_code` to `batches` │
-│ 2. products                       │ 15. warehouses                    │ • Added unique index           │
-│ 3. recipes                        │ 16. storage_locations             │   `uk_batches_qr_code`         │
-│ 4. recipe_steps                   │ 17. material_lots                 │ • Backfilled deterministic     │
-│ 5. qc_specifications              │ 18. stock_movements               │   codes: `QR-PT-BAT-...`       │
-│ 6. manufacturing_orders           │                                   │                                │
-│ 7. batches                        │                                   │                                │
-│ 8. batch_execution_steps          │                                   │                                │
-│ 9. quality_checks                 │                                   │                                │
-│ 10. deviations                    │                                   │                                │
-│ 11. capa_tasks                    │                                   │                                │
-│ 12. deviation_attachments         │                                   │                                │
-│ 13. audit_logs                    │                                   │                                │
-└───────────────────────────────────┴───────────────────────────────────┴────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                              FLYWAY SCHEMA EVOLUTION (V1–V7)                                           │
+├───────────────────────────────────┬───────────────────────────────────┬────────────────────────────────────────────────┤
+│ Flyway V1: Initial Core Schema    │ Flyway V2: Inventory & Warehouse  │ Flyway V3: QR Traceability                     │
+│ (13 Tables)                       │ (5 Tables)                        │ (Schema Expansion)                             │
+├───────────────────────────────────┼───────────────────────────────────┼────────────────────────────────────────────────┤
+│ 1. user_accounts                  │ 14. raw_materials                 │ • Added `qr_code` to `batches`                 │
+│ 2. products                       │ 15. warehouses                    │ • Added unique index `uk_batches_qr_code`      │
+│ 3. recipes                        │ 16. storage_locations             │ • Backfilled deterministic codes:              │
+│ 4. recipe_materials               │ 17. material_lots                 │   `QR-PT-BAT-...`                              │
+│ 5. recipe_steps                   │ 18. stock_movements               │                                                │
+│ 6. orders                         │                                   │                                                │
+│ 7. batches                        │                                   │                                                │
+│ 8. batch_execution_steps          │                                   │                                                │
+│ 9. quality_checks                 │                                   │                                                │
+│ 10. batch_qa_reviews              │                                   │                                                │
+│ 11. deviations                    │                                   │                                                │
+│ 12. capa_actions                  │                                   │                                                │
+│ 13. audit_logs                    │                                   │                                                │
+├───────────────────────────────────┼───────────────────────────────────┼────────────────────────────────────────────────┤
+│ Flyway V4: AI Copilot Threads     │ Flyway V5: AI Batch Analysis      │ Flyway V6: Report Archival & Mandatory Reason  │
+│ (3 Tables)                        │ (1 Table)                         │ (Schema Expansion)                             │
+├───────────────────────────────────┼───────────────────────────────────┼────────────────────────────────────────────────┤
+│ 19. copilot_conversations         │ 22. batch_analysis_reports        │ • Added `archived`, `archived_at`              │
+│ 20. copilot_requests              │     (FULL reports, 12 structured  │ • Added `archived_by_user_id`, `archive_reason` │
+│ 21. copilot_messages              │      sections JSON, Markdown,     │ • Added index `idx_batch_report_archived`      │
+│                                   │      citations JSON)              │                                                │
+├───────────────────────────────────┴───────────────────────────────────┴────────────────────────────────────────────────┤
+│ Flyway V7: Analysis Modes & Focus Areas (Schema Expansion)                                                             │
+├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ • Added `analysis_mode` (FULL / FOCUSED), `focus_areas_json`, `focus_summary` to `batch_analysis_reports`              │
+│ • Added index `idx_batch_report_mode` for fast mode filtering and status lookups                                       │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Entity Relationship Diagram (ERD)
@@ -604,6 +753,10 @@ PharmaTrack's relational schema is version-controlled via Flyway across 3 purely
 ```mermaid
 erDiagram
     users ||--o{ audit_logs : "triggers"
+    users ||--o{ copilot_conversations : "owns"
+    users ||--o{ batch_analysis_reports : "generates/archives"
+    copilot_conversations ||--o{ copilot_requests : "tracks"
+    copilot_requests ||--o{ copilot_messages : "contains"
     products ||--o{ recipes : "formulates"
     products ||--o{ manufacturing_orders : "orders"
     recipes ||--o{ recipe_steps : "defines"
@@ -612,6 +765,7 @@ erDiagram
     batches ||--o{ batch_execution_steps : "executes"
     batches ||--o{ quality_checks : "inspects"
     batches ||--o{ deviations : "flags"
+    batches ||--o{ batch_analysis_reports : "analyzes"
     deviations ||--o{ capa_tasks : "remediates"
     deviations ||--o{ deviation_attachments : "documents"
     warehouses ||--o{ storage_locations : "contains"
@@ -731,6 +885,30 @@ All endpoints (except `/api/health` and `/api/auth/login`) require an `Authoriza
 | `PATCH`| `/api/admin/users/{id}/status` | `ADMIN` | Activates or disables user account access. |
 | `PATCH`| `/api/admin/users/{id}/password` | `ADMIN` | Performs an administrative password reset. |
 
+### AI Copilot & Grounded Inquiries (`/api/ai`)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/ai/query` | Authenticated (General/Order); `SUPERVISOR` (Batch) | Submits a grounded single-turn inquiry against live MES data. General and order queries are open to all authenticated roles; batch analysis queries strictly enforce `PRODUCTION_SUPERVISOR`. |
+
+### AI Copilot Conversations (`/api/ai/conversations`)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/ai/conversations` | All Roles | Lists conversation threads owned by the authenticated caller. |
+| `POST` | `/api/ai/conversations` | All Roles; `SUPERVISOR` (Batch context) | Creates a new conversation thread with optional initial prompt. `BATCH` context requires `PRODUCTION_SUPERVISOR`. |
+| `GET` | `/api/ai/conversations/{id}` | All Roles (Owner); `SUPERVISOR` (Batch context) | Retrieves full conversation history including prompt requests and assistant responses for owned thread. |
+| `PATCH`| `/api/ai/conversations/{id}` | All Roles (Owner); `SUPERVISOR` (Batch context) | Renames conversation thread title for owned thread. |
+| `DELETE`| `/api/ai/conversations/{id}` | All Roles (Owner); `SUPERVISOR` (Batch context) | Soft-deletes conversation thread from the active workspace for owned thread. |
+| `POST` | `/api/ai/conversations/{id}/messages` | All Roles (Owner); `SUPERVISOR` (Batch context) | Submits a prompt within the thread with optimistic leasing (`clientRequestId`) and returns assistant response with citations. |
+
+### AI Batch Analysis & Traceability Reports (`/api/batches/{batchId}/analysis-reports`)
+| Method | Endpoint | Access | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/batches/{batchId}/analysis-reports` | `SUPERVISOR` | Generates a new comprehensive batch analysis report (`FULL` or `FOCUSED` with 9 focus areas). Idempotent via `clientRequestId`. |
+| `GET` | `/api/batches/{batchId}/analysis-reports` | `ADMIN`, `SUPERVISOR`, `QA_REVIEWER` | Lists paginated historical analysis reports for the batch (supports `includeArchived=true`, `page`, `size`). |
+| `GET` | `/api/batches/{batchId}/analysis-reports/{reportId}` | `ADMIN`, `SUPERVISOR`, `QA_REVIEWER` | Retrieves complete report payload: 12 structured domain sections, deterministic manufacturing KPIs, narrative Markdown, and citations. |
+| `PATCH`| `/api/batches/{batchId}/analysis-reports/{reportId}/archive` | `ADMIN`, `SUPERVISOR` | Soft-archives an existing analysis report with mandatory archive reason (max 500 characters). Preserves audit trail. |
+| `DELETE`| `/api/batches/{batchId}/analysis-reports/{reportId}` | `ADMIN` (Local Dev Only) | Permanently deletes a report (local development only; blocked in production and non-loopback databases). Requires confirmation keyword and audit reason; writes pre-deletion audit snapshot to `audit_logs`. |
+
 ---
 
 ## 11. Complete Business Workflows
@@ -802,6 +980,7 @@ Batch Execution Finalized (COMPLETED status)
    ▼
 3. Investigation & 5 Whys Root Cause Analysis
    • Supervisor or QC records root cause category and findings
+   • System validates that RCA cannot be recorded for closed deviations
    │
    ▼
 4. CAPA Task Execution
@@ -816,6 +995,85 @@ Batch Execution Finalized (COMPLETED status)
 6. QA Release Disposition (POST /api/quality/batches/{id}/disposition)
    • Release Gate confirms all required QC tests PASS and 0 open deviations
    • Batch marked APPROVED for commercial packaging and distribution
+```
+
+### 11.4 Grounded AI Copilot Inquiry Lifecycle
+```text
+Shop-Floor / Office Inquirer Types Prompt in Copilot Drawer
+   │
+   ▼
+1. Client-Side Lease Registration (POST /api/ai/conversations/{id}/messages)
+   • Generates unique clientRequestId UUID
+   • Acquires atomic lease in copilot_requests table with IN_PROGRESS status
+   • Thread ownership verified against authenticated JWT principal
+   │
+   ▼
+2. Authoritative Context Snapshot Assembly (BatchContextBuilder / OrderContextBuilder)
+   • Loads authoritative batch record, BOM requirements, eBR execution steps
+   • Loads analytical QC check records, deviations, CAPAs, and stock movements
+   • Synthesizes verified context block: <<<VERIFIED_PHARMATRACK_DATA>>>
+   │
+   ▼
+3. Grounded Prompt Construction & LLM Invocation
+   • System prompt enforces strict non-hallucination guardrails and advisory boundaries
+   • Prohibits speculation beyond provided verified data blocks
+   • Dispatches request to OpenAiLlmClient (connect timeout: 3s, read timeout: 60s via Spring RestClient)
+   │
+   ▼
+4. Output Normalization & Citation Extraction
+   • Normalizes response text and validates claim consistency
+   • Parses MES record identifiers (batches, steps, QC checks, deviations) into AiSourceReferenceDto
+   • Persists assistant response and releases request lease to COMPLETED
+   │
+   ▼
+5. Interactive Client Presentation
+   • Renders clean markdown prose with interactive AiSourceReferencePill widgets
+   • Clicking a reference pill instantly deep-links user to the exact shop-floor MES record
+```
+
+### 11.5 AI Batch Analysis Report Generation & Archival Lifecycle
+```text
+Production Supervisor Clicks "Generate Batch Analysis" in Workspace Tab
+   │
+   ▼
+1. Mode & Focus Area Configuration
+   • Supervisor selects FULL Analysis (all 12 domain sections) or FOCUSED Analysis
+   • For FOCUSED mode: Supervisor selects 1–9 focus areas (e.g. Deviation Root Causes, Raw Material Traceability)
+   • Generates clientRequestId UUID to enforce generation idempotency
+   │
+   ▼
+2. Context Aggregation & Deterministic Manufacturing KPI Calculation
+   • Aggregates complete batch lifecycle records across operational subsystems
+   • Java engine deterministically computes planned batch size, actual yield, yield percentage,
+     yield variance, execution step count, QC check count, and deviation count. For PLANNED batches
+     awaiting production initiation, yield metrics are identified as not yet expected rather than zero.
+   │
+   ▼
+3. LLM Narrative Synthesis & Section Structuring
+   • Single LLM invocation analyzes verified operational events, quality deviations, and chronologically ordered audit logs
+   • Generates structured domain sections matching the selected analysis mode and focus areas
+   • Simultaneously synthesizes narrative markdown and evidence citations
+   │
+   ▼
+4. Post-Synthesis Safeguards & Deterministic Normalization
+   • Applies unconditional deterministic normalization across critical sections (e.g. Section 9 Audit Analysis, Section 10 QA/QC recommendations)
+   • Enforces evidence-aware conclusions: missing/incomplete audit data must never be represented
+     as proof of event absence; zero eBR steps cannot establish audit completeness
+   • Verifies QA release disposition against authoritative batch records; outputs are advisory only and do not constitute QA release
+   │
+   ▼
+5. Atomic Persistence & Audited Archival
+   • Saves report to batch_analysis_reports with status COMPLETED and foreign keys
+   • Supervisors & QA Reviewers review via 3 perspectives (Structured Cards, Narrative, Citations)
+   • Soft-Archival: Authorized Supervisor or Admin can archive obsolete reports with mandatory
+     archive reason (max 500 characters). Archival is one-way (unarchive is not supported)
+   │
+   ▼
+6. Local-Development Permanent Deletion (Admin Only)
+   • In local development/test environments only, an Admin can permanently purge a report
+   • Guarded by LocalEnvironmentDeletionGuard (requires active local profile and loopback/H2 database)
+   • Requires explicit confirmation keyword "PERMANENTLY DELETE" and a mandatory audit reason (max 500 characters)
+   • Atomically writes a PERMANENT_DELETE audit snapshot to audit_logs before physical row deletion
 ```
 
 ---
@@ -852,31 +1110,41 @@ Batch Execution Finalized (COMPLETED status)
 
 ## 14. Testing Strategy & Quality Assurance
 
-PharmaTrack maintains a comprehensive multi-layered automated test suite totaling **808 automated tests**:
+PharmaTrack maintains a comprehensive multi-layered automated test suite totaling **1,584 automated tests**:
+
+> [!NOTE]
+> **Distinction Between Automated Test Suites and Manual Verification:**
+> The metrics below represent 1,584 fully automated regression tests (1,300 backend unit/integration tests and 284 frontend DOM-harness tests) executed automatically via `./mvnw test` and `npm test`. These automated tests run in CI/local suites and are distinct from manual and exploratory browser-based UI verifications.
 
 ### Backend Testing (JUnit 5 + Spring Security Test + MockMvc)
-- **684 Individual Tests across 57 Test Suites:** 100% pass rate executed against isolated in-memory H2 database (0 failures, 0 errors, 0 skipped).
+- **1,300 Individual Tests across 86 Test Suites:** 100% pass rate executed against isolated in-memory H2 database (0 failures, 0 errors, 0 skipped).
 - **Core Verification Suites:**
-  - `BusinessRbacAuthorizationIntegrationTest`: Exhaustively verifies every HTTP method and role combination across all endpoints.
+  - `BusinessRbacAuthorizationIntegrationTest`: Exhaustively verifies every HTTP method and role combination across all endpoints, including AI advisory and report generation boundaries.
   - `QaReleaseGateHttpIntegrationTest`: Validates that missing QC checks or unresolved deviations block batch release.
+  - `BatchAnalysisReportServiceTest`: Validates FULL vs FOCUSED mode execution, 9 focus areas across 4 categories, 100% deterministic manufacturing KPI calculation, evidence classification, post-synthesis normalization, and non-hallucinatory QA release defenses.
+  - `BatchAnalysisReportControllerTest` & `BatchAnalysisReportLifecycleIntegrationTest`: Validates `PRODUCTION_SUPERVISOR` generation gating, idempotent `clientRequestId` leasing, paginated report retrieval, archive reason validation (mandatory, max 500 characters), and `ADMIN`-only local permanent deletion with atomic audit logging and genuine transaction rollback.
+  - `AiCopilotServiceTest` & `AiConversationServiceTest`: Tests conversation isolation, leasing concurrency, stale lease recovery scheduler, and verified data block assembly (`<<<VERIFIED_PHARMATRACK_DATA>>>`).
   - `InventoryServiceAndConcurrencyTest`: Verifies atomic stock deductions and concurrency locking.
   - `TrustedAuditAttributionIntegrationTest`: Verifies that audit records correctly capture authenticated actors during transaction rollbacks.
   - `ProductionProfileConfigurationTest`: Verifies fail-closed startup behavior under production profile.
 
 ### Frontend Testing (Node.js Native Test Runner)
-- **124 Individual Tests:** 100% pass rate (`node --test`).
+- **284 Individual Tests:** 100% pass rate (`node --test`).
 - **Core Verification Areas:**
   - Route and tab access guards matching the backend RBAC matrix.
+  - AI Copilot Drawer, thread switching, user prompt submission, and interactive `AiSourceReferencePill` deep-linking.
+  - Dedicated Batch Analysis Workspace modal, 3 tab perspectives (Structured Analysis cards, Narrative Markdown, Citations), and soft-archival reason modal.
+  - Mode selection (FULL vs FOCUSED) with 9 focus area multi-select and validation.
   - Formulation and recipe step form validations.
   - Date and time formatting in `Asia/Kolkata` across DST boundaries.
   - Batch traceability dossier rendering and QR modal behavior.
 
 ### Test Execution Commands
 ```bash
-# Run backend test suite (684 tests across 57 suites)
+# Run backend test suite (1,300 tests across backend suites)
 cd backend && ./mvnw test
 
-# Run frontend test suite (124 tests)
+# Run frontend test suite (284 tests)
 cd frontend && npm test
 ```
 
@@ -896,7 +1164,7 @@ cd frontend && npm test
 - **Trade-offs:** TiDB differs slightly from MySQL on table auto-increment allocation; resolved via explicit sequence synchronization in Flyway migrations.
 
 ### 3. Flyway Version-Controlled Migrations
-- **Decision:** Use Flyway migrations (`V1`, `V2`, `V3`) with Hibernate `ddl-auto=validate`.
+- **Decision:** Use additive Flyway migrations (production anchored at `V1`–`V3` with 18 tables; local development extended via `V4`–`V7` to 22 tables) with Hibernate `ddl-auto=validate`.
 - **Problem Solved:** Eliminates schema drift between local, staging, and production environments; guarantees reproducible deployments.
 - **Trade-offs:** Schema modifications require formal migration scripts; rolling back requires explicit reversal scripts.
 
@@ -904,6 +1172,16 @@ cd frontend && npm test
 - **Decision:** Store JWTs in browser `sessionStorage` rather than `localStorage` or `HttpOnly` cookies.
 - **Problem Solved:** Allows operators to run different roles (e.g., Operator in Tab 1, QC Analyst in Tab 2) simultaneously for testing and multi-station plant workflows without authorization collisions.
 - **Trade-offs:** Tokens do not persist across browser restarts (operators must log in again upon opening a new window).
+
+### 5. Grounded LLM Prompt Engineering & Deterministic Context Boundary
+- **Decision:** Separate mathematical metrics calculation from narrative generation. Compute planned batch size, actual yield, yield percentage, yield variance, execution step count, QC check count, and deviation count in 100% deterministic Java before passing verified data inside a rigid `<<<VERIFIED_PHARMATRACK_DATA>>>` boundary to a single LLM invocation. Apply deterministic normalization post-synthesis.
+- **Problem Solved:** LLMs are prone to mathematical inaccuracy and hallucinating compliance approvals. Deterministic pre-computation and post-normalization eliminate mathematical hallucination and prevent unauthorized claims of batch release.
+- **Trade-offs:** Adds rigid schema validation and post-processing CPU cycles; prompt tokens increase to include exhaustive MES lifecycle context.
+
+### 6. Idempotent Asynchronous Report Leasing
+- **Decision:** Enforce `clientRequestId` optimistic leasing in `copilot_requests` and `batch_analysis_reports`.
+- **Problem Solved:** Prevents duplicate concurrent LLM API calls and billing spikes caused by repeated user clicks or network retries.
+- **Trade-offs:** Requires scheduled cleanup of stale in-progress leases (`AiConversationRecoveryScheduler`).
 
 ---
 
@@ -914,13 +1192,14 @@ cd frontend && npm test
 | **Backend Runtime** | Java | 17 LTS (Eclipse Temurin) | Jammy Linux base |
 | **Backend Framework** | Spring Boot | 3.3.5 | Spring Security, Spring Data JPA, Web |
 | **Database Engine** | TiDB Cloud | v8.5.3 (AWS Tokyo) | MySQL 8.0 Protocol & InnoDB Semantics |
-| **Schema Migrations** | Flyway | 10.10 | 18 Relational Tables across 3 migrations |
+| **Schema Migrations** | Flyway | 10.10 | Production: 18 Tables (V1–V3); Local Dev: 22 Tables (V1–V7) |
+| **AI & LLM Engine** | OpenAI-Compatible REST API | openai/gpt-oss-20b (via Spring RestClient) | Grounded MES synthesis, strict non-hallucination guardrails, fail-closed timeouts |
 | **Security & Auth** | JJWT | 0.12.6 | Stateless HS256 (256-bit secret) |
 | **Frontend Framework**| React | 18.3.1 | ES6+ JavaScript |
 | **Build Tool** | Vite | 5.4.11 | Dead-code production elimination |
 | **Styling** | Tailwind CSS | 3.4.15 | Custom pharma UI palette |
 | **Icons & QR** | Lucide / ZXing | Lucide 0.460.0 / ZXing 3.5.3 | High-res QR code generation & scanning |
-| **Testing** | JUnit 5 / Node Runner | JUnit 5.10 / Node 20.x | 684 backend + 124 frontend = 808 tests |
+| **Testing** | JUnit 5 / Node Runner | JUnit 5.10 / Node 20.x | 1,300 backend + 284 frontend = 1,584 tests |
 | **Hosting** | Cloudflare / Render | Edge Pages / Docker | Zero-cost free cloud hosting architecture |
 
 ---
@@ -957,6 +1236,17 @@ app.security.bootstrap.admin-password=YourStrongAdminPassword123!
 # Enable Local Demo Accounts (admin, supervisor, operator, qc_analyst, qa_reviewer)
 app.security.local-demo.enabled=true
 app.security.local-demo.password=YourDemoPassword123!
+
+# AI Copilot & Batch Analysis Integration (Groq / OpenAI-compatible endpoint)
+app.ai.enabled=true
+app.ai.provider=openai
+app.ai.base-url=https://api.groq.com/openai/v1
+app.ai.model=openai/gpt-oss-20b
+app.ai.api-key=YOUR_LOCAL_AI_API_KEY_HERE
+app.ai.connect-timeout-ms=3000
+app.ai.read-timeout-ms=60000
+app.ai.max-output-tokens=800
+app.ai.batch-analysis.max-output-tokens=4096
 ```
 
 ### 3. Run Backend
@@ -983,7 +1273,7 @@ cd frontend
 # Install dependencies
 npm install
 
-# Run frontend test suite (124 tests)
+# Run frontend test suite (284 tests)
 npm test
 
 # Start Vite dev server on http://localhost:5173
@@ -1021,13 +1311,19 @@ Open `http://localhost:5173` in your browser.
   BOOTSTRAP_ADMIN_ENABLED=true
   BOOTSTRAP_ADMIN_USERNAME=admin
   BOOTSTRAP_ADMIN_PASSWORD=[REDACTED_STRONG_ADMIN_PASSWORD]
+  APP_AI_ENABLED=false
   ```
+
+> [!NOTE]
+> `APP_AI_ENABLED` defaults to `false` in production for cost predictability and zero external dependencies. The live Render backend operates with AI disabled, and production TiDB remains at Flyway migration V3 (18 application tables). AI Copilot, AI Batch Analysis reports, and Flyway migrations V4–V7 are local development features that have not been pushed or deployed.
 
 ---
 
 ## 19. Future Roadmap
 
 - [ ] **Electronic Signature Re-authentication:** A re-authentication prompt requiring users to re-enter credentials along with a formal signature reason when executing critical batch transitions.
+- [x] **Local Administrative Permanent Deletion for AI Reports:** Implemented single-admin permanent deletion with multi-tier loopback guards (`LocalEnvironmentDeletionGuard`), explicit confirmation keyword (`PERMANENTLY DELETE`), mandatory deletion reason, and atomic pre-deletion audit snapshots for local development and testing environments.
+- [ ] **Production Multi-Party Report Purge Workflow (Dual-Authorization Purge):** Potential future dual-custody authorization workflow (Production Supervisor + Quality Assurance Manager) for permanent cryptographic purge of soft-archived AI Batch Analysis reports in production environments, should regulatory retention policies permit decommissioning.
 - [ ] **OPC-UA / SCADA Machine Telemetry:** Direct IoT ingestion of bioreactor temperatures, mixer RPMs, and scale readings into eBR steps without manual data entry.
 - [ ] **Automated Cold-Chain Telemetry:** Continuous temperature tracking for refrigerated storage locations with automated deviation generation upon threshold excursion.
 - [ ] **Watermarked PDF Batch Record Dossier:** Automated generation of formal PDF batch dossiers for regulatory submission and archiving.
@@ -1037,6 +1333,9 @@ Open `http://localhost:5173` in your browser.
 ## 20. Known Limitations
 
 - **Educational & Portfolio Scope:** PharmaTrack is an engineering portfolio project; it is not formally qualified for commercial drug manufacturing.
+- **Local Development Status of AI Features (Migrations V4–V7):** The AI Copilot, AI Batch Analysis reports, and Flyway migrations V4–V7 (introducing the 4 AI tables) are currently local development additions. The live production Render deployment runs with AI disabled (`APP_AI_ENABLED=false`), and production TiDB operates on Flyway migrations V1–V3 (18 application tables).
+- **AI Advisory Scope & Non-Execution Boundary:** AI Copilot and AI Batch Analysis are strictly non-authoritative advisory systems. AI cannot execute eBR steps, modify recipe parameters, adjust inventory quantities, or record QA disposition decisions. All regulatory actions require explicit human operator authentication.
+- **LLM Socket Inactivity & Timeout Thresholds:** In-depth batch analysis reports over extensive eBR datasets may take up to 20–45 seconds of LLM inference time. Downstream proxies or edge load balancers must maintain socket connections beyond 60 seconds to avoid HTTP 504 Gateway Timeouts.
 - **Render Free-Tier Spin Down:** On the free tier, the backend container spins down after 15 minutes of inactivity, requiring approximately 30–50 seconds to wake up upon receiving a new request.
 - **Browser-Dependent Barcode Scanning:** Live camera QR scanning depends on browser support for the `BarcodeDetector` API (supported in Chromium-based browsers; fallback manual text entry is provided for Safari/Firefox).
 

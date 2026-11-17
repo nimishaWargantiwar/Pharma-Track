@@ -3,6 +3,7 @@ package com.pharmatrack.security;
 import com.pharmatrack.entity.Role;
 import com.pharmatrack.entity.UserAccount;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
@@ -109,7 +110,7 @@ public class JwtService {
 
     public ParsedJwtToken parseAndValidate(String token) {
         if (token == null || token.isBlank()) {
-            throw new BadCredentialsException("Authentication token is missing");
+            throw new JwtAuthenticationException(JwtAuthenticationException.CODE_AUTHENTICATION_REQUIRED, "Authentication token is missing");
         }
 
         try {
@@ -121,40 +122,45 @@ public class JwtService {
 
             String algorithm = jws.getHeader().getAlgorithm();
             if (!Jwts.SIG.HS256.getId().equals(algorithm)) {
-                throw new BadCredentialsException("Unsupported JWT signature algorithm");
+                throw new JwtAuthenticationException(JwtAuthenticationException.CODE_TOKEN_INVALID, "Unsupported JWT signature algorithm");
             }
 
             Claims claims = jws.getPayload();
             String username = UserAccount.normalizeUsername(claims.getSubject());
             if (username == null || username.isEmpty()) {
-                throw new BadCredentialsException("JWT token is missing a valid subject");
+                throw new JwtAuthenticationException(JwtAuthenticationException.CODE_TOKEN_INVALID, "JWT token is missing a valid subject");
             }
 
             Long userId = extractLongClaim(claims, CLAIM_USER_ID);
             if (userId == null || userId <= 0L) {
-                throw new BadCredentialsException("JWT token is missing a valid user ID claim");
+                throw new JwtAuthenticationException(JwtAuthenticationException.CODE_TOKEN_INVALID, "JWT token is missing a valid user ID claim");
             }
 
             String roleValue = claims.get(CLAIM_ROLE, String.class);
             if (roleValue == null || roleValue.isBlank()) {
-                throw new BadCredentialsException("JWT token is missing a role claim");
+                throw new JwtAuthenticationException(JwtAuthenticationException.CODE_TOKEN_INVALID, "JWT token is missing a role claim");
             }
-            Role role = Role.valueOf(roleValue.trim());
+            Role role;
+            try {
+                role = Role.valueOf(roleValue.trim());
+            } catch (IllegalArgumentException ex) {
+                throw new JwtAuthenticationException(JwtAuthenticationException.CODE_TOKEN_INVALID, "JWT token contains an unknown role");
+            }
 
             String fullName = claims.get(CLAIM_FULL_NAME, String.class);
             if (fullName == null || fullName.isBlank()) {
-                throw new BadCredentialsException("JWT token is missing a valid name claim");
+                throw new JwtAuthenticationException(JwtAuthenticationException.CODE_TOKEN_INVALID, "JWT token is missing a valid name claim");
             }
 
             Long tokenVersion = extractLongClaim(claims, CLAIM_TOKEN_VERSION);
             if (tokenVersion == null || tokenVersion < 0L) {
-                throw new BadCredentialsException("JWT token is missing a valid token version claim");
+                throw new JwtAuthenticationException(JwtAuthenticationException.CODE_TOKEN_INVALID, "JWT token is missing a valid token version claim");
             }
 
             Date issuedAt = claims.getIssuedAt();
             Date expiration = claims.getExpiration();
             if (issuedAt == null || expiration == null) {
-                throw new BadCredentialsException("JWT token is missing required timestamp claims");
+                throw new JwtAuthenticationException(JwtAuthenticationException.CODE_TOKEN_INVALID, "JWT token is missing required timestamp claims");
             }
 
             return new ParsedJwtToken(
@@ -166,10 +172,12 @@ public class JwtService {
                     issuedAt.toInstant(),
                     expiration.toInstant()
             );
-        } catch (BadCredentialsException ex) {
+        } catch (JwtAuthenticationException ex) {
             throw ex;
+        } catch (ExpiredJwtException ex) {
+            throw new JwtAuthenticationException(JwtAuthenticationException.CODE_TOKEN_EXPIRED, "Authentication token has expired", ex);
         } catch (JwtException | IllegalArgumentException ex) {
-            throw new BadCredentialsException("Invalid or expired authentication token", ex);
+            throw new JwtAuthenticationException(JwtAuthenticationException.CODE_TOKEN_INVALID, "Invalid or expired authentication token", ex);
         }
     }
 

@@ -26,7 +26,7 @@ import { useNavigation } from '../context/NavigationContext.jsx';
 import { canManageManufacturingOrders } from '../utils/rbacUtils.js';
 import { calculateOrderBatchProgress } from '../utils/orderUtils.js';
 
-export default function OrderManagement() {
+export default function OrderManagement({ onOpenCopilot = null }) {
   const { role } = useAuth();
   const { activeTab, routeParams, routeNonce, navigateToTab } = useNavigation();
   const canManageOrders = canManageManufacturingOrders(role);
@@ -571,6 +571,7 @@ export default function OrderManagement() {
         onClose={handleCloseDetailsModal}
         orderId={selectedOrderId}
         onOrderUpdated={handleOrderStatusUpdated}
+        onOpenCopilot={onOpenCopilot}
       />
     </div>
   );

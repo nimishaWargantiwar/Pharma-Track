@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -26,21 +26,51 @@ import {
   User,
   Warehouse,
   XCircle,
+  Sparkles,
 } from 'lucide-react';
 import StatusBadge from './ui/StatusBadge.jsx';
 import InlineAlert from './ui/InlineAlert.jsx';
 import BatchQrModal from './BatchQrModal.jsx';
+import BatchAnalysisWorkspace from './BatchAnalysisWorkspace.jsx';
 import { fetchBatchTraceabilityByIdentifier } from '../services/batchTraceabilityApi.js';
 import { formatAppDateTime, formatCalendarDate } from '../utils/dateTimeUtils.js';
+import { useNavigation } from '../context/NavigationContext.jsx';
+import { AuthContext } from '../context/AuthContext.jsx';
+import { canGenerateBatchAnalysis, canViewBatchAnalysis } from '../utils/rbacUtils.js';
 
-export default function BatchTraceability({ initialBatchNumber }) {
-  const [searchInput, setSearchInput] = useState(initialBatchNumber || '');
+export default function BatchTraceability({ initialBatchNumber, onOpenCopilot = null }) {
+  const navigation = useNavigation();
+  const auth = useContext(AuthContext);
+  const currentRole = auth?.user?.role || auth?.role;
+  const canGenerateReport = canGenerateBatchAnalysis(currentRole);
+  const canViewReports = canViewBatchAnalysis(currentRole);
+  const routeParams = navigation?.routeParams;
+  const routeNonce = navigation?.routeNonce ?? 0;
+
+  const requestedBatchParam =
+    routeParams?.get?.('batchNumber') ||
+    routeParams?.get?.('batch') ||
+    routeParams?.get?.('qr') ||
+    initialBatchNumber ||
+    '';
+  const requestedView = routeParams?.get?.('view');
+
+  const [searchInput, setSearchInput] = useState(requestedBatchParam || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [dossier, setDossier] = useState(null);
+  const consumedBatchKeyRef = useRef('');
+  const requestIdRef = useRef(0);
 
   // QR Modal
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+
+  // Dedicated AI Batch Analysis Workspace Modal
+  const [isAnalysisWorkspaceOpen, setIsAnalysisWorkspaceOpen] = useState(requestedView === 'analysis');
+
+  useEffect(() => {
+    setIsAnalysisWorkspaceOpen(requestedView === 'analysis');
+  }, [requestedView]);
 
   // Camera Scanning State
   const [cameraActive, setCameraActive] = useState(false);
@@ -120,41 +150,59 @@ export default function BatchTraceability({ initialBatchNumber }) {
       return;
     }
     const cleanId = String(identifier).trim();
+    const currentRequestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
 
     try {
       const data = await fetchBatchTraceabilityByIdentifier(cleanId);
-      setDossier(data);
-      setSearchInput(data.batchNumber);
+      if (currentRequestId === requestIdRef.current) {
+        setDossier(data);
+        setSearchInput(data?.batchNumber || cleanId);
+      }
     } catch (err) {
-      setDossier(null);
-      setError(
-        err.message ||
-          `Batch "${cleanId}" could not be found or retrieved. Please verify the batch number or QR code.`
-      );
+      if (currentRequestId === requestIdRef.current) {
+        setDossier(null);
+        setError(
+          err.message ||
+            `Batch "${cleanId}" could not be found or retrieved. Please verify the batch number or QR code.`
+        );
+      }
     } finally {
-      setLoading(false);
+      if (currentRequestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    if (initialBatchNumber) {
-      setSearchInput(initialBatchNumber);
-      loadDossier(initialBatchNumber);
-    } else if (typeof window !== 'undefined') {
+    let targetBatch = requestedBatchParam;
+
+    // Fallback: Check window.location.hash if not in routeParams
+    if (!targetBatch && typeof window !== 'undefined') {
       const hash = window.location.hash || '';
       const queryIdx = hash.indexOf('?');
       if (queryIdx !== -1) {
         const qs = new URLSearchParams(hash.substring(queryIdx));
-        const batchParam = qs.get('batchNumber') || qs.get('batch') || qs.get('qr');
-        if (batchParam) {
-          setSearchInput(batchParam);
-          loadDossier(batchParam);
-        }
+        targetBatch = qs.get('batchNumber') || qs.get('batch') || qs.get('qr') || '';
       }
     }
-  }, [initialBatchNumber, loadDossier]);
+
+    if (!targetBatch || !String(targetBatch).trim()) {
+      return undefined;
+    }
+
+    const cleanTarget = String(targetBatch).trim();
+    const linkKey = `${routeNonce}|${cleanTarget.toLowerCase()}`;
+    if (consumedBatchKeyRef.current === linkKey) {
+      return undefined;
+    }
+
+    consumedBatchKeyRef.current = linkKey;
+    setSearchInput(cleanTarget);
+    loadDossier(cleanTarget);
+    return undefined;
+  }, [requestedBatchParam, routeNonce, loadDossier]);
 
   // Start Camera QR Scanning
   const startCamera = async () => {
@@ -291,6 +339,27 @@ export default function BatchTraceability({ initialBatchNumber }) {
     window.print();
   };
 
+  if (isAnalysisWorkspaceOpen && dossier) {
+    return (
+      <div className="w-full">
+        <BatchAnalysisWorkspace
+          batchId={dossier.batchId}
+          batchNumber={dossier.batchNumber}
+          dossier={dossier}
+          role={currentRole}
+          onClose={(opts) => {
+            setIsAnalysisWorkspaceOpen(false);
+            if (!opts?.isCitationNavigation && navigation?.navigateToTab) {
+              navigation.navigateToTab('traceability', {
+                batchNumber: dossier.batchNumber,
+              });
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-12">
       {/* Top Banner & Header */}
@@ -315,6 +384,48 @@ export default function BatchTraceability({ initialBatchNumber }) {
           <div className="flex flex-wrap items-center gap-2">
             {dossier && (
               <>
+                {canGenerateReport && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAnalysisWorkspaceOpen(true);
+                      if (navigation?.navigateToTab) {
+                        navigation.navigateToTab('traceability', {
+                          batchNumber: dossier.batchNumber,
+                          view: 'analysis',
+                        });
+                      }
+                    }}
+                    data-testid="generate-ai-batch-analysis-button"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-pharma-600 hover:bg-pharma-700 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-pharma-500 transition-colors"
+                    title={`Generate AI Batch Analysis Report for ${dossier.batchNumber}`}
+                    aria-label={`Generate AI Batch Analysis Report for ${dossier.batchNumber}`}
+                  >
+                    <Sparkles className="w-4 h-4 text-sky-200" aria-hidden="true" />
+                    <span>Generate AI Batch Analysis</span>
+                  </button>
+                )}
+                {!canGenerateReport && canViewReports && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAnalysisWorkspaceOpen(true);
+                      if (navigation?.navigateToTab) {
+                        navigation.navigateToTab('traceability', {
+                          batchNumber: dossier.batchNumber,
+                          view: 'analysis',
+                        });
+                      }
+                    }}
+                    data-testid="view-ai-batch-analysis-button"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-pharma-700 bg-pharma-50 hover:bg-pharma-100 border border-pharma-200 rounded-lg shadow-2xs focus:outline-none focus:ring-2 focus:ring-pharma-500 transition-colors"
+                    title={`View AI Batch Analysis Reports for ${dossier.batchNumber}`}
+                    aria-label={`View AI Batch Analysis Reports for ${dossier.batchNumber}`}
+                  >
+                    <Sparkles className="w-4 h-4 text-pharma-600" aria-hidden="true" />
+                    <span>View AI Batch Analysis</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setIsQrModalOpen(true)}
@@ -1027,7 +1138,7 @@ export default function BatchTraceability({ initialBatchNumber }) {
             ) : (
               <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-xs flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>No deviations or non-conformances recorded for this batch (100% Compliant).</span>
+                <span>No deviations or non-conformances are recorded for this batch.</span>
               </div>
             )}
           </section>
